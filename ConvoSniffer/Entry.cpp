@@ -1,4 +1,5 @@
 #include "Common/Base.hpp"
+#include "ConvoSniffer/Client.hpp"
 #include "ConvoSniffer/Entry.hpp"
 #include "ConvoSniffer/Hooks.hpp"
 
@@ -25,8 +26,11 @@ SPI_IMPLEMENT_ATTACH
 
     LEASI_INFO("hello there, {}!", "ConvoSniffer");
 
-    ::Sleep(8 * 1000);
-    ::ConvoSniffer::DumpConvoFunctions();
+    //::Sleep(8 * 1000);
+    //::ConvoSniffer::DumpConvoFunctions();
+
+    ::Sleep(3 * 1000);
+    ::ConvoSniffer::gp_snifferClient = new ConvoSniffer::SnifferClient("localhost", 21830);
 
     return true;
 }
@@ -34,6 +38,7 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
     LEASI_UNUSED(InterfacePtr);
+    delete std::exchange(::ConvoSniffer::gp_snifferClient, nullptr);
     ::LESDK::TerminateConsole();
     return true;
 }

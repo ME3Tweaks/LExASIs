@@ -2,6 +2,8 @@ asi_target (ConvoSniffer
   SHARED
   GAMES "LE1"
   SOURCES
+    "Client.cpp"
+    "Client.hpp"
     "Config.hpp"
     "Entry.cpp"
     "Entry.hpp"
@@ -12,4 +14,7 @@ asi_target (ConvoSniffer
   VLINKS
     "Common"
     "LESDK"
+  LINKS
+    "simdutf"
+    Wininet.lib
   )

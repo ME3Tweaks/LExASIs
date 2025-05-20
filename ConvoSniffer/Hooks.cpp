@@ -1,4 +1,5 @@
 #include "Common/Objects.hpp"
+#include "ConvoSniffer/Client.hpp"
 #include "ConvoSniffer/Config.hpp"
 #include "ConvoSniffer/Hooks.hpp"
 #include "ConvoSniffer/Profile.hpp"
@@ -104,8 +105,8 @@ namespace ConvoSniffer
         UBioConversation* const Conversation = Context->Cast<UBioConversation>();
         if (Conversation != nullptr && Stack->Node != nullptr && Stack->Node->GetName().Equals(L"UpdateConversation"))
         {
-            //LEASI_BREAK_SAFE();
-            // ...
+            if (gp_snifferClient)
+                gp_snifferClient->OnUpdateConversation(Conversation);
         }
     }
 
@@ -116,7 +117,6 @@ namespace ConvoSniffer
     t_UBioConversation_StartConversation* UBioConversation_StartConversation_orig = nullptr;
     UBOOL UBioConversation_StartConversation_hook(UBioConversation* const Context, AActor* const Owner, AActor* const Player)
     {
-        LEASI_UNUSED_3(Context, Owner, Player);
         UBOOL const Result = UBioConversation_StartConversation_orig(Context, Owner, Player);
 
 #if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS
@@ -127,19 +127,22 @@ namespace ConvoSniffer
 
 #endif
 
+        if (gp_snifferClient)
+            gp_snifferClient->OnStartConversation(Context);
+
         return Result;
     }
 
     t_UBioConversation_EndConversation* UBioConversation_EndConversation_orig = nullptr;
     void UBioConversation_EndConversation_hook(UBioConversation* const Context)
     {
-        LEASI_UNUSED(Context);
+        if (gp_snifferClient)
+            gp_snifferClient->OnEndConversation(Context);
+
         UBioConversation_EndConversation_orig(Context);
 
 #if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS
-
         LEASI_INFO(L"EndConversation");
-
 #endif
     }
 
@@ -161,7 +164,9 @@ namespace ConvoSniffer
     t_UBioConversation_QueueReply* UBioConversation_QueueReply_orig = nullptr;
     UBOOL UBioConversation_QueueReply_hook(UBioConversation* const Context, int const Reply)
     {
-        LEASI_UNUSED_2(Context, Reply);
+        if (gp_snifferClient)
+            gp_snifferClient->OnQueueReply(Context, Reply);
+
         UBOOL const Result = UBioConversation_QueueReply_orig(Context, Reply);
 
 #if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS
