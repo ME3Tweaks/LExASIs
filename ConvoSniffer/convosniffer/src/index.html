@@ -54,9 +54,17 @@
             if (key == "Conversation") {
               setConvo(value.start);
               setReplies([]);
-              setKeybinds([]);
             } else if (key == "UpdateReplies") {
               setReplies(value.replies);
+            } else if (key == "QueueReply") {
+              setReplies((_replies) =>
+                _replies.map((reply, index) => {
+                  if (index === value.index) {
+                    return { ...reply, queued: true };
+                  }
+                  return { ...reply, queued: false };
+                })
+              );
             } else if (key == "SetKeybinds") {
               setKeybinds(value.keybinds);
             } else {
@@ -83,13 +91,22 @@
         } else {
           let replyBlocks = replies
             .filter(reply => !(reply.id === 0 && reply.paraphrase == "" && reply.text == ""))
-            .map(reply => html`<div><strong>${reply.id < keybinds.length ? keybinds[reply.id] : "???"}.</strong> ${reply.paraphrase} <em>(${reply.text})</em></div>`);
+            .map(reply => {
+              // console.log(reply);
+              const replyClass = reply.queued === true ? "queued" : "";
+              return html`<div class="${replyClass}"><strong>${reply.id < keybinds.length ? keybinds[reply.id] : "???"}.</strong> ${reply.paraphrase} <em>(${reply.text})</em></div>`;
+            });
 
           return html`
             <div>
               <header>Conversation active:</header>
               <hr/>
               ${replyBlocks}
+              <style>
+                div.queued {
+                  color: red;
+                }
+              </style>
             </div>
           `;
         }

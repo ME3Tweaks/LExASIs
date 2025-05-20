@@ -66,10 +66,34 @@ namespace ConvoSniffer
         void OnEndConversation(UBioConversation* InConversation);
         void OnQueueReply(UBioConversation* InConversation, int Reply);
         void OnUpdateConversation(UBioConversation* InConversation);
+        void OnVeryFrequentUpdateConversation();
 
     private:
 
-        HttpClient Http;
-        UBioConversation* Conversation;
+        void SendReplyUpdate();
+        void SendReplyUpdate(FString&& InBuffer);
+        static bool BuildReplyUpdate(UBioConversation* InConversation, FString& OutBuffer);
+
+        struct ReplyBundle final
+        {
+            int             Index;
+            wchar_t const*  Style;
+            FString         Paraphrase;
+            FString         Text;
+        };
+
+        struct UpdateChecker final
+        {
+            void*   Conversation;
+            int     nCurrentEntry;
+
+            UpdateChecker(UBioConversation* InConvo);
+            bool operator==(UpdateChecker const& Other) const;
+        };
+
+        HttpClient              Http;
+        UBioConversation*       Conversation;
+        UpdateChecker           CheckUpdate;
+        bool                    bInitialReplies;
     };
 }

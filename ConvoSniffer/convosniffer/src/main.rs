@@ -8,7 +8,8 @@ use serde::Serialize;
 use tokio::{net::TcpListener, sync::{broadcast::{self, Sender}, RwLock}};
 
 fn main() {
-    let (sender, _) = broadcast::channel::<WebNotif>(1);
+    // Keep a receiver copy around to avoid "channel closed" errors.
+    let (sender, _receiver) = broadcast::channel::<WebNotif>(1);
 
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -25,6 +26,12 @@ fn main() {
                 }))
                 .route("/conversation", delete(async |State(state): State<AppState>| {
                     match state.end_conversation().await {
+                        Ok(()) => (StatusCode::NO_CONTENT, "".to_string()),
+                        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+                    }
+                }))
+                .route("/conversation/replies/queue", post(async |State(state): State<AppState>, body: String| {
+                    match state.queue_reply(&body).await {
                         Ok(()) => (StatusCode::NO_CONTENT, "".to_string()),
                         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
                     }
@@ -129,6 +136,22 @@ impl AppState {
         }
     }
 
+    /// Queues a reply in the current conversation.
+    pub async fn queue_reply(&self, client_string: &str) -> anyhow::Result<()> {
+        let index: i32 = client_string.trim().parse().context("invalid index integer")?;
+        if index < 0 || index >= MAX_REPLIES as i32 { Err(anyhow!("index {} out of bounds", index))?; }
+
+        let mut convo = self.convo.write().await;
+        match &mut *convo {
+            Some(convo) => {
+                convo.replies[index as usize].queued = true;
+                self.sender.send(WebNotif::QueueReply { index })?;
+                Ok(())
+            },
+            None => Err(anyhow!("conversation not started"))?,
+        }
+    }
+
     /// Updates current conversation's displayed replies.
     pub async fn update_replies(&self, client_string: &str) -> anyhow::Result<()> {
         let mut convo = self.convo.write().await;
@@ -195,6 +218,7 @@ impl Conversation {
                     style: line_style.to_string(),
                     paraphrase: line_paraphrase.to_string(),
                     text: line_text.to_string(),
+                    queued: false,
                 };
             }
 
@@ -212,6 +236,7 @@ pub struct ConversationReply {
     pub style: String,
     pub paraphrase: String,
     pub text: String,
+    pub queued: bool,
 }
 
 impl ConversationReply {
@@ -224,6 +249,7 @@ impl ConversationReply {
         self.style.clear();
         self.paraphrase.clear();
         self.text.clear();
+        self.queued = false;
     }
 }
 
@@ -234,6 +260,9 @@ pub enum WebNotif {
     Conversation { start: bool, },
     UpdateReplies {
         replies: Vec<ConversationReply>,
+    },
+    QueueReply {
+        index: i32,
     },
     SetKeybinds {
         keybinds: Vec<String>,

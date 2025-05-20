@@ -1,7 +1,11 @@
 #include <Windows.h>
 #include <wininet.h>
+
 #include <simdutf.h>
+
 #include "ConvoSniffer/Client.hpp"
+#include "ConvoSniffer/Profile.hpp"
+
 
 namespace ConvoSniffer
 {
@@ -32,7 +36,6 @@ namespace ConvoSniffer
                 while (!bWantsExit.test())
                 {
                     std::unique_lock QueueLock(QueueMutex);
-                    RequestCondition.wait(QueueLock);
 
                     if (!RequestQueue.empty())
                     {
@@ -45,6 +48,8 @@ namespace ConvoSniffer
 
                         RequestQueue.pop_front();
                     }
+
+                    RequestCondition.wait(QueueLock);
                 }
             });
     }
@@ -97,23 +102,20 @@ namespace ConvoSniffer
 
         if (Request == NULL)
         {
-            LEASI_ERROR(L"failed to initialize http request ('{}' {}): {}",
-                InRequest.Method, *InRequest.Path, GetLastError());
+            LEASI_ERROR(L"failed to initialize http request {}", GetLastError());
             return false;
         }
 
         std::string BodyUtf8{};
         if (!StringToUtf8(InRequest.Body, BodyUtf8))
         {
-            LEASI_ERROR(L"failed to convert http request body to utf-8 ('{}' {})",
-                InRequest.Method, *InRequest.Path);
+            LEASI_ERROR(L"failed to convert http request body to utf-8");
             bSuccess = false;
         }
 
         if (bSuccess && HttpSendRequestW(Request, NULL, 0u, BodyUtf8.data(), (DWORD)BodyUtf8.length()) == FALSE)
         {
-            LEASI_ERROR(L"failed to send http request ('{}' {}): {}",
-                InRequest.Method, *InRequest.Path, GetLastError());
+            LEASI_ERROR(L"failed to send http request {}", GetLastError());
             bSuccess = false;
         }
 
@@ -128,25 +130,28 @@ namespace ConvoSniffer
                 bSuccess = false;
             }
 
-            FString TextBuffer{};
-            DWORD TextBufferSize = 1024;
-            TextBuffer.Assign(L'\0', TextBufferSize);
+            // TODO: Read to EOF here...
 
-            if (!HttpQueryInfoW(Request, HTTP_QUERY_STATUS_TEXT,
-                (WCHAR*)TextBuffer.Chars(), &TextBufferSize, 0u))
+            DWORD TextBufferSize = 1024;
+            std::string TextBuffer(TextBufferSize, '\0');
+
+            if (!InternetReadFile(Request, TextBuffer.data(), TextBufferSize, &TextBufferSize))
             {
                 LEASI_BREAK_SAFE();
                 bSuccess = false;
             }
 
-            OutResponse->Body.Clear();
-            OutResponse->Body.Append(TextBuffer.Chars(), TextBuffer.Chars() + TextBufferSize / sizeof(WCHAR));
+            TextBuffer.resize(TextBufferSize);
+            if (!StringFromUtf8(OutResponse->Body, TextBuffer))
+            {
+                LEASI_ERROR(L"failed to convert http response body from utf-8");
+                bSuccess = false;
+            }
         }
 
         if (InternetCloseHandle(Request) == FALSE)
         {
-            LEASI_ERROR(L"failed to close http request ('{}' {}): {}",
-                InRequest.Method, *InRequest.Path, GetLastError());
+            LEASI_ERROR(L"failed to close http request: {}", GetLastError());
         }
 
         return bSuccess;
@@ -161,10 +166,12 @@ namespace ConvoSniffer
             return false;
 
         auto const OutLength = simdutf::utf8_length_from_utf16le(Chars, Length);
-        OutString.resize(OutLength);
 
-        // We've already validated input string...
-        simdutf::convert_utf16le_to_utf8(Chars, Length, OutString.data());
+        if (OutLength != 0)
+        {
+            OutString.resize(OutLength);
+            simdutf::convert_utf16le_to_utf8(Chars, Length, OutString.data());
+        }
 
         return true;
     }
@@ -178,10 +185,12 @@ namespace ConvoSniffer
             return false;
 
         auto const OutLength = simdutf::utf16_length_from_utf8(Chars, Length);
-        OutString.Assign(L'\0', (DWORD)OutLength);
 
-        // We've already validated input string...
-        simdutf::convert_utf8_to_utf16le(Chars, Length, (char16_t*)OutString.Chars());
+        if (OutLength != 0)
+        {
+            OutString.Assign(L'\0', (DWORD)OutLength);
+            simdutf::convert_utf8_to_utf16le(Chars, Length, (char16_t*)OutString.Chars());
+        }
 
         return true;
     }
@@ -192,9 +201,11 @@ namespace ConvoSniffer
 
     SnifferClient::SnifferClient(char const* const InHost, int const InPort)
         : Http{ InHost, InPort }
-        , Conversation{}
+        , Conversation{ nullptr }
+        , CheckUpdate{ nullptr }
     {
-        // ...
+        // Let's hard-code the keybinds for now...
+        Http.QueueRequest(L"PUT", L"/keybinds", L"1;2;3;4;5;6;7;8;9;10;A;B;C;D;E;F");
     }
 
     void SnifferClient::OnStartConversation(UBioConversation* const InConversation)
@@ -202,7 +213,10 @@ namespace ConvoSniffer
         if (Conversation == nullptr)
         {
             Conversation = InConversation;
+            CheckUpdate = InConversation;
             Http.QueueRequest(L"POST", L"/conversation", FString());
+            CheckUpdate.nCurrentEntry = -1;
+            bInitialReplies = false;
         }
         else
         {
@@ -216,6 +230,7 @@ namespace ConvoSniffer
         if (Conversation == InConversation)
         {
             Http.QueueRequest(L"DELETE", L"/conversation", FString());
+            CheckUpdate = nullptr;
             Conversation = nullptr;
         }
         else if (Conversation != nullptr)
@@ -234,20 +249,129 @@ namespace ConvoSniffer
     {
         LEASI_UNUSED(InConversation);
         LEASI_UNUSED(Reply);
+
+        if (Conversation == InConversation)
+        {
+            int const Index = (Reply >= 0 && Reply < (int)InConversation->m_lstCurrentReplyIndices.Count())
+                ? InConversation->m_lstCurrentReplyIndices(Reply)
+                : 15;
+
+            Http.QueueRequest(L"POST", L"/conversation/replies/queue", FString::Printf(L"%d", Index));
+        }
+        else
+        {
+            LEASI_ERROR(L"conversation {:p} is in flight but {:p} is to queue reply", (void*)Conversation, (void*)InConversation);
+            LEASI_BREAK_SAFE();
+        }
     }
 
     void SnifferClient::OnUpdateConversation(UBioConversation* const InConversation)
     {
         if (Conversation == InConversation)
         {
-            // ...
+            UpdateChecker NewCheckUpdate(InConversation);
+            if (CheckUpdate != NewCheckUpdate)
+            {
+                SendReplyUpdate();
+                CheckUpdate = NewCheckUpdate;
+                bInitialReplies = true;
+            }
         }
         else
         {
-            LEASI_ERROR("conversation {:p} is in flight but {:p} is to update", (void*)Conversation, (void*)InConversation);
+            LEASI_ERROR(L"conversation {:p} is in flight but {:p} is to update", (void*)Conversation, (void*)InConversation);
             LEASI_BREAK_SAFE();
         }
     }
 
-    // ...
+    void SnifferClient::OnVeryFrequentUpdateConversation()
+    {
+        if (!bInitialReplies)
+        {
+            OnUpdateConversation(Conversation);
+            bInitialReplies = true;
+        }
+    }
+
+    void SnifferClient::SendReplyUpdate()
+    {
+        FString Buffer{};
+
+        if (!BuildReplyUpdate(Conversation, Buffer))
+        {
+            // If we've failed to build a reply list, send an empty list.
+            Buffer = L"0\n";
+        }
+
+        SendReplyUpdate(std::move(Buffer));
+    }
+
+    void SnifferClient::SendReplyUpdate(FString&& InBuffer)
+    {
+        Http.QueueRequest(L"PUT", L"/conversation/replies", std::move(InBuffer));
+    }
+
+    bool SnifferClient::BuildReplyUpdate(UBioConversation* const InConversation, FString& OutBuffer)
+    {
+        OutBuffer.Clear();
+        OutBuffer.Reserve(1024);
+
+        int const nCurrentEntry = InConversation->m_nCurrentEntry;
+        std::vector<ReplyBundle> ReplyBundles{};
+
+        if (nCurrentEntry >= 0 && nCurrentEntry < static_cast<int>(InConversation->m_EntryList.Count()))
+        {
+            FBioDialogEntryNode const& CurrentEntry = InConversation->m_EntryList(nCurrentEntry);
+            for (int Index : InConversation->m_lstCurrentReplyIndices)
+            {
+                if (Index == -1) continue;
+                FBioDialogReplyListDetails const& Details = CurrentEntry.ReplyListNew(Index);
+
+                LEASI_CHECKW(static_cast<UINT>(Details.nIndex) < InConversation->m_ReplyList.Count(), L"reply index out of bounds", L"");
+                FBioDialogReplyNode const& Reply = InConversation->m_ReplyList(Details.nIndex);
+
+                if (Reply.bNonTextLine) continue;
+                ReplyBundle& Bundle = ReplyBundles.emplace_back();
+
+                Bundle.Index = Index;
+                Bundle.Style = GuiStyleToString(static_cast<EConvGUIStyles>(Reply.eGUIStyle));
+                Bundle.Paraphrase = InConversation->GetStringInfo(Details.srParaphrase).sText;
+                Bundle.Text = InConversation->GetStringInfo(Reply.srText).sText;
+
+                if (Bundle.Text.Empty()) ReplyBundles.pop_back();
+                if (Bundle.Text.Contains(L"\n")) LEASI_BREAK_SAFE();
+            }
+        }
+
+        if (ReplyBundles.empty())
+            return false;
+
+        OutBuffer.AppendFormat(L"%llu\n", ReplyBundles.size());
+
+        for (ReplyBundle const& Bundle : ReplyBundles)
+        {
+            OutBuffer.AppendFormat(L"\n");
+            OutBuffer.AppendFormat(L"%d\n", Bundle.Index);
+            OutBuffer.AppendFormat(L"%s\n", Bundle.Style);
+            OutBuffer.AppendFormat(L"%s\n", *Bundle.Paraphrase);
+            OutBuffer.AppendFormat(L"%s\n", *Bundle.Text);
+        }
+
+
+        return true;
+    }
+
+    SnifferClient::UpdateChecker::UpdateChecker(UBioConversation* const InConvo)
+    {
+        Conversation = InConvo;
+        if (Conversation == nullptr) return;
+
+        nCurrentEntry = InConvo->m_nCurrentEntry;
+    }
+
+    bool SnifferClient::UpdateChecker::operator==(UpdateChecker const& Other) const
+    {
+        return Conversation == Other.Conversation
+            && nCurrentEntry == Other.nCurrentEntry;
+    }
 }

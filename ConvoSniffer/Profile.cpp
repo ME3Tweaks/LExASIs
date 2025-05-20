@@ -2,36 +2,6 @@
 
 namespace ConvoSniffer
 {
-
-    namespace
-    {
-
-    /// Copied from SFXGame_classes.hpp
-    enum EConvGUIStyles
-    {
-        GUI_STYLE_NONE = 0,
-        GUI_STYLE_CHARM = 1,
-        GUI_STYLE_INTIMIDATE = 2,
-        GUI_STYLE_PLAYER_ALERT = 3,
-        GUI_STYLE_ILLEGAL = 4,
-        GUI_STYLE_MAX = 5
-    };
-
-    wchar_t const* GuiStyleToString(EConvGUIStyles const InValue)
-    {
-        switch (InValue)
-        {
-        case GUI_STYLE_NONE: return L"NONE";
-        case GUI_STYLE_CHARM: return L"CHARM";
-        case GUI_STYLE_INTIMIDATE: return L"INTIMIDATE";
-        case GUI_STYLE_PLAYER_ALERT: return L"PLAYER_ALERT";
-        case GUI_STYLE_ILLEGAL: return L"ILLEGAL";
-        default: return L"<N/A>";
-        }
-    }
-
-    }
-
     void ProfileConversation(UCanvas* const Canvas, UBioConversation* const Conversation)
     {
         int const Width = Canvas->SizeX;
@@ -52,6 +22,12 @@ namespace ConvoSniffer
         Canvas->CurX = s_profilePadding;
         Canvas->CurY += s_profilePadding;
 
+        Canvas->DrawTextScaled(FString::Printf(L"Need to display replies: %d",
+            (int)Conversation->NeedToDisplayReplies()), 1.f, 1.f);
+        Canvas->CurX = s_profilePadding;
+        Canvas->CurY += s_profilePaddingSmall;
+        Canvas->CurY += s_profilePaddingSmall;
+
         Canvas->DrawTextScaled(L"Replies:", 1.f, 1.f);
         Canvas->CurX = s_profilePadding;
         Canvas->CurY += s_profilePaddingSmall;
@@ -63,11 +39,10 @@ namespace ConvoSniffer
         if (nCurrentEntry >= 0 && nCurrentEntry < static_cast<int>(Conversation->m_EntryList.Count()))
         {
             FBioDialogEntryNode const& CurrentEntry = Conversation->m_EntryList(nCurrentEntry);
-
-            int Index = -1;
-            for (FBioDialogReplyListDetails const& Details : CurrentEntry.ReplyListNew)
+            for (int Index : Conversation->m_lstCurrentReplyIndices)
             {
-                Index++;
+                if (Index == -1) continue;
+                FBioDialogReplyListDetails const& Details = CurrentEntry.ReplyListNew(Index);
 
                 LEASI_CHECKW(static_cast<UINT>(Details.nIndex) < Conversation->m_ReplyList.Count(), L"reply index out of bounds", L"");
                 FBioDialogReplyNode const& Reply = Conversation->m_ReplyList(Details.nIndex);

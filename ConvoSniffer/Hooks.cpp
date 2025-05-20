@@ -102,11 +102,23 @@ namespace ConvoSniffer
 
 #endif
 
-        UBioConversation* const Conversation = Context->Cast<UBioConversation>();
-        if (Conversation != nullptr && Stack->Node != nullptr && Stack->Node->GetName().Equals(L"UpdateConversation"))
+        bool bUpdateConversationHandled = false;
+
+        UBioConversation* const Conversation = Context->CastDirect<UBioConversation>();
+        if (Conversation != nullptr && Stack->Node != nullptr && gp_snifferClient != nullptr)
         {
-            if (gp_snifferClient)
+            FString const Name = Stack->Node->GetName();
+            if (Name.Equals(L"UpdateConversation"))
+            {
                 gp_snifferClient->OnUpdateConversation(Conversation);
+                bUpdateConversationHandled = true;
+            }
+        }
+
+        if (!bUpdateConversationHandled)
+        {
+            gp_snifferClient->OnVeryFrequentUpdateConversation();
+            bUpdateConversationHandled = true;
         }
     }
 
@@ -169,9 +181,9 @@ namespace ConvoSniffer
 
         UBOOL const Result = UBioConversation_QueueReply_orig(Context, Reply);
 
-#if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS
+#if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS || true
 
-        LEASI_INFO(L"QueueReply: Reply = {}", Reply);
+        LEASI_INFO(L"QueueReply: Reply = {} (=> {})", Reply, Context->m_lstCurrentReplyIndices(Reply));
         LEASI_INFO(L"  paraphrase = {}", *Context->GetReplyParaphraseText(Reply));
         LEASI_INFO(L"  text = {}", *Context->GetReplyText(Reply, TRUE));
 
