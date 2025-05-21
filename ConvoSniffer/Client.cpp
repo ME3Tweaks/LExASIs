@@ -249,6 +249,9 @@ namespace ConvoSniffer
 
     void SnifferClient::OnStartConversation(UBioConversation* const InConversation)
     {
+        if (InConversation->m_bAmbient)
+            return;
+
         if (Conversation == nullptr)
         {
             Conversation = InConversation;
@@ -272,6 +275,9 @@ namespace ConvoSniffer
 
     void SnifferClient::OnEndConversation(UBioConversation* const InConversation)
     {
+        if (InConversation->m_bAmbient)
+            return;
+
         if (Conversation == InConversation)
         {
             Http.QueueRequest(L"DELETE", L"/conversation", FString());
@@ -298,6 +304,9 @@ namespace ConvoSniffer
 
     void SnifferClient::OnQueueReply(UBioConversation* const InConversation, int const Reply)
     {
+        if (InConversation->m_bAmbient)
+            return;
+
         LEASI_UNUSED(InConversation);
         LEASI_UNUSED(Reply);
 
@@ -318,6 +327,9 @@ namespace ConvoSniffer
 
     void SnifferClient::OnUpdateConversation(UBioConversation* const InConversation)
     {
+        if (InConversation->m_bAmbient)
+            return;
+
         if (Conversation == InConversation)
         {
             UpdateChecker NewCheckUpdate(InConversation);
@@ -386,6 +398,7 @@ namespace ConvoSniffer
 
                 Bundle.Index = Index;
                 Bundle.Style = GuiStyleToString(static_cast<EConvGUIStyles>(Reply.eGUIStyle));
+                Bundle.Category = ReplyCategoryToString(static_cast<EReplyCategory>(Details.Category));
                 Bundle.Paraphrase = InConversation->GetStringInfo(Details.srParaphrase).sText;
                 Bundle.Text = InConversation->GetStringInfo(Reply.srText).sText;
 
@@ -404,6 +417,7 @@ namespace ConvoSniffer
             OutBuffer.AppendFormat(L"\n");
             OutBuffer.AppendFormat(L"%d\n", Bundle.Index);
             OutBuffer.AppendFormat(L"%s\n", Bundle.Style);
+            OutBuffer.AppendFormat(L"%s\n", Bundle.Category);
             OutBuffer.AppendFormat(L"%s\n", *Bundle.Paraphrase);
             OutBuffer.AppendFormat(L"%s\n", *Bundle.Text);
         }

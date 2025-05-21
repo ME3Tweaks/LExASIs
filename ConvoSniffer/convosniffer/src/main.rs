@@ -278,6 +278,7 @@ impl Conversation {
                 let line_separator = *lines.next().ok_or_else(|| anyhow!("failed to pop separator line for reply {}", i))?;
                 let line_index = *lines.next().ok_or_else(|| anyhow!("failed to pop index line for reply {}", i))?;
                 let line_style = *lines.next().ok_or_else(|| anyhow!("failed to pop style line for reply {}", i))?;
+                let line_category = *lines.next().ok_or_else(|| anyhow!("failed to pop category line for reply {}", i))?;
                 let line_paraphrase = *lines.next().ok_or_else(|| anyhow!("failed to pop paraphrase line for reply {}", i))?;
                 let line_text = *lines.next().ok_or_else(|| anyhow!("failed to pop text line for reply {}", i))?;
 
@@ -289,6 +290,7 @@ impl Conversation {
                 self.replies[index] = ConversationReply {
                     id: index,
                     style: line_style.to_string(),
+                    category: line_category.to_string(),
                     paraphrase: line_paraphrase.to_string(),
                     text: line_text.to_string(),
                     queued: false,
@@ -307,6 +309,7 @@ impl Conversation {
 pub struct ConversationReply {
     pub id: usize,
     pub style: String,
+    pub category: String,
     pub paraphrase: String,
     pub text: String,
     pub queued: bool,
@@ -320,6 +323,7 @@ impl ConversationReply {
     pub fn clear(&mut self) {
         self.id = 0;
         self.style.clear();
+        self.category.clear();
         self.paraphrase.clear();
         self.text.clear();
         self.queued = false;

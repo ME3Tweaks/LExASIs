@@ -87,6 +87,7 @@ namespace ConvoSniffer
         {
             int             Index;
             wchar_t const*  Style;
+            wchar_t const*  Category;
             FString         Paraphrase;
             FString         Text;
         };

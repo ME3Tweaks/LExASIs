@@ -89,11 +89,31 @@
           contents = replies
             .filter(reply => !(reply.id === 0 && reply.paraphrase == "" && reply.text == ""))
             .map(reply => {
+              function replyClasses(reply) {
+                if (reply.queued === true) return ["text-success bg-success-subtle", "bg-success"];
+                else if (reply.style === "CHARM") return ["text-primary bg-primary-subtle", "bg-primary"];
+                else if (reply.style === "INTIMIDATE") return ["text-danger bg-danger-subtle", "bg-danger"];
+                else if (reply.style === "ILLEGAL") return ["text-body-secondary bg-secondary-subtle", "bg-secondary"];
+                // else if (reply.category === "DEFAULT") return ["", ""];
+                // else if (reply.category === "AGREE") return ["", ""];
+                // else if (reply.category === "DISAGREE") return ["", ""];
+                // else if (reply.category === "FRIENDLY") return ["", ""];
+                // else if (reply.category === "HOSTILE") return ["", ""];
+                // else if (reply.category === "INVESTIGATE") return ["", ""];
+                else return ["", ""];
+              }
+
+              function getKeybind(index, keybinds) {
+                return (index < keybinds.length && keybinds[index])
+                  ? keybinds[index]
+                  : "??";
+              }
+
               return html`
-                <div class="row align-items-center rounded py-1 mb-2 ${(reply.queued === true ? "text-success bg-success-subtle" : "")}">
+                <div class="row align-items-center rounded py-1 mb-2 ${replyClasses(reply)[0]}">
                   <div class="col-auto text-center">
-                    <kbd class="fw-bold ${(reply.queued === true ? "bg-success" : "")}">
-                      ${reply.id < keybinds.length ? keybinds[reply.id] : "??"}
+                    <kbd class="fw-bold ${replyClasses(reply)[1]}">
+                      ${getKeybind(reply.id, keybinds)}
                     </kbd>
                   </div>
                   <div class="col">
@@ -101,7 +121,7 @@
                       <div class="col"><strong>${reply.paraphrase}</strong></div>
                     </div>
                     <div class="row">
-                      <div class="col"><small><em>${reply.text}</em></small></div>
+                      <div class="col"><small><em>${reply.category}: ${reply.text}</em></small></div>
                     </div>
                   </div>
                 </div>
