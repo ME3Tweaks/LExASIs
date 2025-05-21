@@ -21,6 +21,7 @@ namespace ConvoSniffer
         : Host{}
         , Port{ InPort }
         , RequestQueue{}
+        , RequestIndex{}
         , ProcessThread{}
         , bWantsExit{}
     {
@@ -45,11 +46,20 @@ namespace ConvoSniffer
                         RequestQueue.pop_front();
                         QueueLock.unlock();
 
-                        LEASI_INFO(L"request: method = {}, path = {}", HttpRequest.Method, *HttpRequest.Path);
+                        LEASI_INFO(L"request[{}]: method = {}, path = {}", HttpRequest.Index, HttpRequest.Method, *HttpRequest.Path);
 
                         Response HttpResponse{};
                         if (SendHttp(HttpRequest, &HttpResponse))
-                            LEASI_INFO(L"response: status = {}, text = {}", HttpResponse.Status, *HttpResponse.Body);
+                        {
+                            if (HttpResponse.Status < 400 || HttpResponse.Status >= 600)
+                            {
+                                LEASI_INFO(L"response[{}]: status = {}, text = {}", HttpRequest.Index, HttpResponse.Status, *HttpResponse.Body);
+                            }
+                            else
+                            {
+                                LEASI_ERROR(L"response[{}]: status = {}, text = {}", HttpRequest.Index, HttpResponse.Status, *HttpResponse.Body);
+                            }
+                        }
                     }
                     else
                     {
@@ -83,7 +93,7 @@ namespace ConvoSniffer
         if (!bWantsExit.test())
         {
             std::unique_lock QueueLock(QueueMutex);
-            RequestQueue.push_back(Request{ InMethod, FString(InPath), std::move(InBody) });
+            RequestQueue.push_back(Request{ RequestIndex++, InMethod, FString(InPath), std::move(InBody) });
 
             QueueLock.unlock();
             RequestCondition.notify_all();
@@ -327,7 +337,7 @@ namespace ConvoSniffer
 
     void SnifferClient::OnVeryFrequentUpdateConversation()
     {
-        if (!bInitialReplies)
+        if (!bInitialReplies && Conversation != nullptr)
         {
             OnUpdateConversation(Conversation);
             bInitialReplies = true;

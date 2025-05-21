@@ -29,6 +29,7 @@ namespace ConvoSniffer
 
         struct Request final
         {
+            int             Index{};
             wchar_t const*  Method{};
             FString         Path{};
             FString         Body{};
@@ -53,6 +54,7 @@ namespace ConvoSniffer
         std::mutex                  QueueMutex;
         std::condition_variable     RequestCondition;
         std::deque<Request>         RequestQueue;
+        int                         RequestIndex;
         std::thread                 ProcessThread;
         std::atomic_flag            bWantsExit;
     };

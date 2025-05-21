@@ -3,6 +3,9 @@
 #include "ConvoSniffer/Entry.hpp"
 #include "ConvoSniffer/Hooks.hpp"
 
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+
 
 #ifndef SDK_TARGET_LE1
     // This is only a proof of concept for now.
@@ -48,8 +51,17 @@ namespace ConvoSniffer
 {
     void InitializeLogger()
     {
-        spdlog::default_logger()->set_pattern("%^[%H:%M:%S.%e] [%l] (LE1ConvoSniffer) %v%$");
-        spdlog::default_logger()->set_level(spdlog::level::trace);
+        auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        console->set_pattern("%^[%H:%M:%S.%e] [%L LE1ConvoSniffer] %v%$");
+        console->set_level(spdlog::level::debug);
+
+        auto file = std::make_shared<spdlog::sinks::basic_file_sink_mt>("convosniffer.log", false);
+        file->set_pattern("[%H:%M:%S.%e] [%l] %v {%@}");
+        file->set_level(spdlog::level::trace);
+
+        auto logger = new spdlog::logger("multi_sink", { console, file });
+        logger->set_level(spdlog::level::trace);
+        spdlog::set_default_logger(std::shared_ptr<spdlog::logger>(logger));
     }
 
 #define CHECK_RESOLVED(variable)                                                    \
