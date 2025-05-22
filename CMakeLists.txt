@@ -46,7 +46,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND WIN32)
 
   add_compile_options ( "/MP" "/utf-8" "/Zi"
     "$<$<IN_LIST:$<CONFIG>,DEBUG>:/MDd;/Od;/JMC>"
-    "$<$<IN_LIST:$<CONFIG>,RELEASE>:/MD;/O2>"
+    "$<$<IN_LIST:$<CONFIG>,RELEASE>:/MD;/O1>"
   )
 
   add_link_options ( "/DEBUG"

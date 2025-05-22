@@ -22,6 +22,7 @@ set (SIMDUTF_ICONV OFF)
 
 add_subdirectory ("simdutf")
 set_target_properties (simdutf PROPERTIES FOLDER "External")
+set_target_properties (simdutf-singleheader-files PROPERTIES FOLDER "External")
 
 
 # ! Submodule: spdlog.

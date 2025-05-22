@@ -17,5 +17,6 @@ tracing-subscriber = { version = "0.3" }
 debug = "full"
 lto = true
 opt-level = "s"
+panic = "abort"
 split-debuginfo = "packed"
 strip = "symbols"
