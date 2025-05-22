@@ -17,12 +17,6 @@ namespace ConvoSniffer
         LEASI_UNUSED_4(Context, Function, Parms, Result);
         UObject_ProcessEvent_orig(Context, Function, Parms, Result);
 
-        //if (UGameViewportClient* const Viewport = Context->Cast<UGameViewportClient>();
-        //    Viewport != nullptr && Function->GetName().Equals(L"Init"))
-        //{
-        //    // ...
-        //}
-
 #if defined(CNVSNF_LOG_MANAGED_FUNCS) && CNVSNF_LOG_MANAGED_FUNCS
         {
             FString const FunctionName = Function->GetFullName();
@@ -136,6 +130,9 @@ namespace ConvoSniffer
         static bool sb_commandsLogged = false;
         if (!std::exchange(sb_commandsLogged, true))
         {
+            LEASI_INFO(L"Use 'show scaleform' to toggle UI manually, if needed.");
+            LEASI_INFO(L" ");
+
             LEASI_INFO(L"Available extra commands:");
             LEASI_INFO(L" - cs.profile - toggles profiler rendering (in convos)");
             LEASI_INFO(L" - cs.hud - toggles scaleform rendering (in convos)");
@@ -180,7 +177,8 @@ namespace ConvoSniffer
     {
         if (gp_snifferClient && gp_snifferClient->InConversation())
         {
-            if (EventType == 1)  // only interested in "released" key events
+            // Only interested in "released" key events.
+            if (EventType == 1)
             {
                 FString const   KeyStr = Key.ToString();
                 bool            bKeyHandled = false;
@@ -211,8 +209,8 @@ namespace ConvoSniffer
                     gp_snifferClient->GetActiveConversation()->SkipNode();
                 }
 
-                LEASI_UNUSED(bKeyHandled);
                 // Allow the engine to handle 0-9A-F keys even if we're using them...
+                LEASI_UNUSED(bKeyHandled);
             }
         }
 

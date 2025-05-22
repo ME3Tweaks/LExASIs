@@ -76,7 +76,12 @@ fn main() {
                     async fn handle_socket(mut socket: WebSocket, state: AppState, addr: SocketAddr) {
                         tracing::info!(?addr, "handling new websocket connection");
 
-                        // Sync prior conversation state for new clients...
+                        // Sync keybinds for new clients.
+                        let keybinds_notif = WebNotif::SetKeybinds { keybinds: state.keybinds.read().await.to_vec() };
+                        let keybinds_notif_str = serde_json::to_string(&keybinds_notif).unwrap();
+                        if socket.send(keybinds_notif_str.into()).await.is_err() { return; }
+
+                        // Sync prior conversation state for new clients.
                         {
                             let guard = state.convo.read().await;
                             if let Some(ref convo) = *guard {
@@ -89,11 +94,6 @@ fn main() {
                                 if socket.send(replies_notif_str.into()).await.is_err() { return; }
                             }
                         }
-
-                        // Sync keybinds, even if out of conversation...
-                        let keybinds_notif = WebNotif::SetKeybinds { keybinds: state.keybinds.read().await.to_vec() };
-                        let keybinds_notif_str = serde_json::to_string(&keybinds_notif).unwrap();
-                        if socket.send(keybinds_notif_str.into()).await.is_err() { return; }
 
                         let mut receiver = state.sender.subscribe();
                         tokio::spawn(async move {
@@ -186,27 +186,35 @@ impl AppState {
     /// Initializes a new conversation.
     pub async fn start_conversation(&self) -> anyhow::Result<()> {
         let mut convo = self.convo.write().await;
-        match *convo {
-            None => {
-                *convo = Some(Conversation::new());
-                self.sender.send(WebNotif::Conversation { start: true })?;
-                Ok(())
-            },
-            Some(_) => Err(anyhow!("conversation already started"))?,
+
+        if convo.is_some() {
+            // Reset the conversation instead of hard error if out of sync...
+            tracing::warn!("conversation already started, resetting...");
         }
+
+        *convo = Some(Conversation::new());
+        drop(convo);
+
+        self.sender.send(WebNotif::Conversation { start: true })
+            .map_err(|e| e.into())
+            .map(|_| ())
     }
 
     /// Terminates current conversation.
     pub async fn end_conversation(&self) -> anyhow::Result<()> {
         let mut convo = self.convo.write().await;
-        match *convo {
-            Some(_) => {
-                *convo = None;
-                self.sender.send(WebNotif::Conversation { start: false })?;
-                Ok(())
-            },
-            None => Err(anyhow!("conversation not started"))?,
+
+        if convo.is_none() {
+            // Reset the conversation instead of hard error if out of sync...
+            tracing::warn!("conversation not started, resetting...");
         }
+
+        *convo = None;
+        drop(convo);
+
+        self.sender.send(WebNotif::Conversation { start: false })
+            .map_err(|e| e.into())
+            .map(|_| ())
     }
 
     /// Queues a reply in the current conversation.
@@ -227,16 +235,27 @@ impl AppState {
 
     /// Updates current conversation's displayed replies.
     pub async fn update_replies(&self, client_string: &str) -> anyhow::Result<()> {
+        let mut send_error = None;
+
         let mut convo = self.convo.write().await;
-        match *convo {
-            Some(ref mut convo) => {
-                convo.clear();
-                convo.parse(client_string)?;
-                self.sender.send(WebNotif::UpdateReplies { replies: convo.replies.to_vec() })?;
-                Ok(())
-            },
-            None => Err(anyhow!("conversation not started"))?,
+        let convo_ref = convo.get_or_insert_with(|| {
+            // Implicitly create the conversation instead of hard error if out of sync...
+            if let Err(error) = self.sender.send(WebNotif::Conversation { start: true }) {
+                send_error = Some(error);
+            }
+            Conversation::new()
+        });
+
+        // Propagate error from initialization closure.
+        if let Some(error) = send_error {
+            Err(error)?;
         }
+
+        convo_ref.clear();
+        convo_ref.parse(client_string)?;
+        self.sender.send(WebNotif::UpdateReplies { replies: convo_ref.replies.to_vec() })
+            .map_err(|e| e.into())
+            .map(|_| ())
     }
 
     /// Updates displayed key binding configuration.

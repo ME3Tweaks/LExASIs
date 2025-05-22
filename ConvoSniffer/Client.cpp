@@ -217,10 +217,9 @@ namespace ConvoSniffer
     SnifferClient::SnifferClient(char const* const InHost, int const InPort)
         : Http{ InHost, InPort }
         , Conversation{ nullptr }
-        , CheckUpdate{ nullptr }
+        , nCurrentEntry{ -1 }
     {
-        // Let's hard-code the keybinds for now...
-        Http.QueueRequest(L"PUT", L"/keybinds", L"0;1;2;3;4;5;6;7;8;9;A;B;C;D;E;F");
+        SendKeybinds();
     }
 
     bool SnifferClient::InConversation() const noexcept
@@ -249,15 +248,14 @@ namespace ConvoSniffer
 
     void SnifferClient::OnStartConversation(UBioConversation* const InConversation)
     {
-        if (InConversation->m_bAmbient)
-            return;
-
         if (Conversation == nullptr)
         {
+            // For when the server starts after the game.
+            SendKeybinds();
+
             Conversation = InConversation;
-            CheckUpdate = InConversation;
             Http.QueueRequest(L"POST", L"/conversation", FString());
-            CheckUpdate.nCurrentEntry = -1;
+            nCurrentEntry = -1;
             bInitialReplies = false;
 
             if (!gb_renderScaleform)
@@ -275,14 +273,11 @@ namespace ConvoSniffer
 
     void SnifferClient::OnEndConversation(UBioConversation* const InConversation)
     {
-        if (InConversation->m_bAmbient)
-            return;
-
         if (Conversation == InConversation)
         {
             Http.QueueRequest(L"DELETE", L"/conversation", FString());
-            CheckUpdate = nullptr;
             Conversation = nullptr;
+            nCurrentEntry = -1;
 
             if (!gb_renderScaleform)
             {
@@ -304,9 +299,6 @@ namespace ConvoSniffer
 
     void SnifferClient::OnQueueReply(UBioConversation* const InConversation, int const Reply)
     {
-        if (InConversation->m_bAmbient)
-            return;
-
         LEASI_UNUSED(InConversation);
         LEASI_UNUSED(Reply);
 
@@ -327,16 +319,12 @@ namespace ConvoSniffer
 
     void SnifferClient::OnUpdateConversation(UBioConversation* const InConversation)
     {
-        if (InConversation->m_bAmbient)
-            return;
-
         if (Conversation == InConversation)
         {
-            UpdateChecker NewCheckUpdate(InConversation);
-            if (CheckUpdate != NewCheckUpdate)
+            if (nCurrentEntry != InConversation->m_nCurrentEntry)
             {
                 SendReplyUpdate();
-                CheckUpdate = NewCheckUpdate;
+                nCurrentEntry = InConversation->m_nCurrentEntry;
                 bInitialReplies = true;
             }
         }
@@ -354,6 +342,12 @@ namespace ConvoSniffer
             OnUpdateConversation(Conversation);
             bInitialReplies = true;
         }
+    }
+
+    void SnifferClient::SendKeybinds()
+    {
+        // Let's hard-code the keybinds for now...
+        Http.QueueRequest(L"PUT", L"/keybinds", L"0;1;2;3;4;5;6;7;8;9;A;B;C;D;E;F");
     }
 
     void SnifferClient::SendReplyUpdate()
@@ -424,19 +418,5 @@ namespace ConvoSniffer
 
 
         return true;
-    }
-
-    SnifferClient::UpdateChecker::UpdateChecker(UBioConversation* const InConvo)
-    {
-        Conversation = InConvo;
-        if (Conversation == nullptr) return;
-
-        nCurrentEntry = InConvo->m_nCurrentEntry;
-    }
-
-    bool SnifferClient::UpdateChecker::operator==(UpdateChecker const& Other) const
-    {
-        return Conversation == Other.Conversation
-            && nCurrentEntry == Other.nCurrentEntry;
     }
 }

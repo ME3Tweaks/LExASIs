@@ -79,6 +79,7 @@ namespace ConvoSniffer
 
     private:
 
+        void SendKeybinds();
         void SendReplyUpdate();
         void SendReplyUpdate(FString&& InBuffer);
         static bool BuildReplyUpdate(UBioConversation* InConversation, FString& OutBuffer);
@@ -92,18 +93,9 @@ namespace ConvoSniffer
             FString         Text;
         };
 
-        struct UpdateChecker final
-        {
-            void*   Conversation;
-            int     nCurrentEntry;
-
-            UpdateChecker(UBioConversation* InConvo);
-            bool operator==(UpdateChecker const& Other) const;
-        };
-
         HttpClient              Http;
         UBioConversation*       Conversation;
-        UpdateChecker           CheckUpdate;
+        int                     nCurrentEntry;
         bool                    bInitialReplies;
     };
 }
