@@ -21,16 +21,15 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 SPI_IMPLEMENT_ATTACH
 {
     ::LESDK::Initializer Init{ InterfacePtr, "LE1ConvoSniffer" };
-
     ::LESDK::InitializeConsole();
+
     ::ConvoSniffer::InitializeLogger();
+
+    LEASI_INFO("Launching ConvoSniffer ({})...", "LE1");
+    LEASI_INFO("-------------------------------");
+
     ::ConvoSniffer::InitializeGlobals(Init);
     ::ConvoSniffer::InitializeHooks(Init);
-
-    LEASI_INFO("hello there, {}!", "ConvoSniffer");
-
-    //::Sleep(8 * 1000);
-    //::ConvoSniffer::DumpConvoFunctions();
 
     ::Sleep(3 * 1000);
     ::ConvoSniffer::gp_snifferClient = new ConvoSniffer::SnifferClient("localhost", 21830);
@@ -55,8 +54,8 @@ namespace ConvoSniffer
         console->set_pattern("%^[%H:%M:%S.%e] [%L LE1ConvoSniffer] %v%$");
         console->set_level(spdlog::level::debug);
 
-        auto file = std::make_shared<spdlog::sinks::basic_file_sink_mt>("convosniffer.log", false);
-        file->set_pattern("[%H:%M:%S.%e] [%l] %v {%@}");
+        auto file = std::make_shared<spdlog::sinks::basic_file_sink_mt>("convosniffer.le1.log", false);
+        file->set_pattern("[%H:%M:%S.%e] [%l] %v");
         file->set_level(spdlog::level::trace);
 
         auto logger = new spdlog::logger("multi_sink", { console, file });

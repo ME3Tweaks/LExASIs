@@ -14,7 +14,6 @@ namespace ConvoSniffer
     t_UObject_ProcessEvent* UObject_ProcessEvent_orig = nullptr;
     void UObject_ProcessEvent_hook(UObject* const Context, UFunction* const Function, void* const Parms, void* const Result)
     {
-        LEASI_UNUSED_4(Context, Function, Parms, Result);
         UObject_ProcessEvent_orig(Context, Function, Parms, Result);
 
 #if defined(CNVSNF_LOG_MANAGED_FUNCS) && CNVSNF_LOG_MANAGED_FUNCS
@@ -57,47 +56,28 @@ namespace ConvoSniffer
     t_UObject_ProcessInternal* UObject_ProcessInternal_orig = nullptr;
     void UObject_ProcessInternal_hook(UObject* const Context, FFrame* const Stack, void* const Result)
     {
-        LEASI_UNUSED_3(Context, Stack, Result);
         UObject_ProcessInternal_orig(Context, Stack, Result);
 
 #if defined(CNVSNF_LOG_MANAGED_FUNCS) && CNVSNF_LOG_MANAGED_FUNCS
-
-        if (Stack->Node == nullptr)
         {
-            LEASI_WARN(L"ProcessInternal: null function");
-            return;
+            FString const FunctionName = Stack->Node->GetFullName();
+            if (FunctionName.Contains(L"BioConversation"))
+                LEASI_INFO(L"ProcessInternal: {}", *FunctionName);
         }
-
-        FString const FunctionName = Stack->Node->GetFullName();
-        if (FunctionName.Contains(L"BioConversation"))
-            LEASI_INFO(L"ProcessInternal: {}", *FunctionName);
-
 #endif
     }
 
     t_UObject_CallFunction* UObject_CallFunction_orig = nullptr;
     void UObject_CallFunction_hook(UObject* const Context, FFrame* const Stack, void* const Result, UFunction* const Function)
     {
-        LEASI_UNUSED_4(Context, Stack, Result, Function);
         UObject_CallFunction_orig(Context, Stack, Result, Function);
 
 #if defined(CNVSNF_LOG_MANAGED_FUNCS) && CNVSNF_LOG_MANAGED_FUNCS
-
-        if (Function == nullptr)
         {
-            LEASI_WARN(L"CallFunction: null function");
-            return;
+            FString const FunctionName = Function->GetFullName();
+            if (FunctionName.Contains(L"BioConversation"))
+                LEASI_INFO(L"CallFunction: {}", *FunctionName);
         }
-
-        FString const FunctionName = Function->GetFullName();
-        if (FunctionName.Contains(L"BioConversation") &&
-            !FunctionName.Contains(L"UpdateConversation") &&
-            !FunctionName.Contains(L"NeedToDisplayReplies") &&
-            !FunctionName.Contains(L"SkipNode"))
-        {
-            LEASI_INFO(L"CallFunction: {}", *FunctionName);
-        }
-
 #endif
 
         bool bUpdateConversationHandled = false;
@@ -130,9 +110,7 @@ namespace ConvoSniffer
         static bool sb_commandsLogged = false;
         if (!std::exchange(sb_commandsLogged, true))
         {
-            LEASI_INFO(L"Use 'show scaleform' to toggle UI manually, if needed.");
-            LEASI_INFO(L" ");
-
+            LEASI_INFO(L"Invoke 'show scaleform' to toggle UI manually, if needed.");
             LEASI_INFO(L"Available extra commands:");
             LEASI_INFO(L" - cs.profile - toggles profiler rendering (in convos)");
             LEASI_INFO(L" - cs.hud - toggles scaleform rendering (in convos)");
@@ -209,7 +187,7 @@ namespace ConvoSniffer
                     gp_snifferClient->GetActiveConversation()->SkipNode();
                 }
 
-                // Allow the engine to handle 0-9A-F keys even if we're using them...
+                // Allow the engine to handle 0-9, A-F keys even if we're using them...
                 LEASI_UNUSED(bKeyHandled);
             }
         }
@@ -256,13 +234,10 @@ namespace ConvoSniffer
     t_UBioConversation_SelectReply* UBioConversation_SelectReply_orig = nullptr;
     UBOOL UBioConversation_SelectReply_hook(UBioConversation* const Context, int const Reply)
     {
-        LEASI_UNUSED_2(Context, Reply);
         UBOOL const Result = UBioConversation_SelectReply_orig(Context, Reply);
 
-#if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS && false
-
+#if defined(CNVSNF_LOG_NATIVE_FUNCS) && CNVSNF_LOG_NATIVE_FUNCS
         LEASI_INFO(L"SelectReply: Reply = {}", Reply);
-
 #endif
 
         return Result;

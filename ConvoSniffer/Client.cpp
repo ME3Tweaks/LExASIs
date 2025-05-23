@@ -353,13 +353,7 @@ namespace ConvoSniffer
     void SnifferClient::SendReplyUpdate()
     {
         FString Buffer{};
-
-        if (!BuildReplyUpdate(Conversation, Buffer))
-        {
-            // If we've failed to build a reply list, send an empty list.
-            Buffer = L"0\n";
-        }
-
+        BuildReplyUpdate(Conversation, Buffer);
         SendReplyUpdate(std::move(Buffer));
     }
 
@@ -368,10 +362,19 @@ namespace ConvoSniffer
         Http.QueueRequest(L"PUT", L"/conversation/replies", std::move(InBuffer));
     }
 
-    bool SnifferClient::BuildReplyUpdate(UBioConversation* const InConversation, FString& OutBuffer)
+    void SnifferClient::BuildReplyUpdate
+    (
+        UBioConversation* const     InConversation,
+        FString&                    OutBuffer
+    )
     {
         OutBuffer.Clear();
         OutBuffer.Reserve(1024);
+
+        UEngine* const Engine = Common::FindFirstObject<UEngine>();
+        LEASI_CHECKW(Engine != nullptr, L"failed to retrieve engine", L"");
+        ABioWorldInfo* const WorldInfo = Engine->GetCurrentWorldInfo()->Cast<ABioWorldInfo>();
+        LEASI_CHECKW(WorldInfo != nullptr, L"failed to retrieve world info", L"");
 
         int const nCurrentEntry = InConversation->m_nCurrentEntry;
         std::vector<ReplyBundle> ReplyBundles{};
@@ -387,7 +390,7 @@ namespace ConvoSniffer
                 LEASI_CHECKW(static_cast<UINT>(Details.nIndex) < InConversation->m_ReplyList.Count(), L"reply index out of bounds", L"");
                 FBioDialogReplyNode const& Reply = InConversation->m_ReplyList(Details.nIndex);
 
-                if (Reply.bNonTextLine) continue;
+                //if (!CheckReplyCondition(WorldInfo, InConversation, Reply)) continue;
                 ReplyBundle& Bundle = ReplyBundles.emplace_back();
 
                 Bundle.Index = Index;
@@ -396,13 +399,13 @@ namespace ConvoSniffer
                 Bundle.Paraphrase = InConversation->GetStringInfo(Details.srParaphrase).sText;
                 Bundle.Text = InConversation->GetStringInfo(Reply.srText).sText;
 
+                if (!CheckReplyCondition(WorldInfo, InConversation, Reply))
+                    Bundle.Style = GuiStyleToString(GUI_STYLE_ILLEGAL);
+
                 if (Bundle.Text.Empty()) ReplyBundles.pop_back();
                 if (Bundle.Text.Contains(L"\n")) LEASI_BREAK_SAFE();
             }
         }
-
-        if (ReplyBundles.empty())
-            return false;
 
         OutBuffer.AppendFormat(L"%llu\n", ReplyBundles.size());
 
@@ -415,7 +418,68 @@ namespace ConvoSniffer
             OutBuffer.AppendFormat(L"%s\n", *Bundle.Paraphrase);
             OutBuffer.AppendFormat(L"%s\n", *Bundle.Text);
         }
+    }
 
+    bool SnifferClient::CheckReplyCondition
+    (
+        ABioWorldInfo* const            WorldInfo,
+        UBioConversation* const         InConversation,
+        FBioDialogReplyNode const&      InReply
+    )
+    {
+        if (InReply.bNonTextLine)
+            return false;
+
+        wchar_t const* const ConditionalType = InReply.bFireConditional ? L"conditional" : L"bool";
+
+        LEASI_TRACE(L"Evaluating reply: {}", *InConversation->GetStringInfo(InReply.srText).sText);
+        LEASI_TRACE(L"  id = {}, param = {}, type = {}", InReply.nConditionalFunc, InReply.nConditionalParam, ConditionalType);
+
+        if (InReply.bFireConditional)
+        {
+            if (InReply.nConditionalFunc >= 0)
+            {
+                SFXName const ClassName(L"BioAutoConditionals", 0);
+                SFXName const FunctionName(*FString::Printf(L"F%d", InReply.nConditionalFunc), 0);
+
+                Common::TypedObjectIterator<UFunction> Iterator{};
+                for (; Iterator; ++Iterator)
+                {
+                    UFunction* const    Function = *Iterator;
+                    UClass* const       Class = Function->Outer ? Function->Outer->Cast<UClass>() : nullptr;
+
+                    if (Function->Name == FunctionName && Class != nullptr && Class->Name == ClassName)
+                    {
+                        LEASI_CHECKW((Function->FunctionFlags & 0x400) == 0,
+                            L"native conditional: {}", *Function->GetFullName());
+
+                        UObject* const      Context = Class->ClassDefaultObject;
+                        ConditionalParms    Parms{ WorldInfo, InReply.nConditionalParam, 0u };
+
+                        Context->ProcessEvent(Function, &Parms, NULL);
+
+                        if (Parms.ReturnValue == FALSE)
+                            return false;
+
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            UBioGlobalVariableTable* const VarTable = WorldInfo->GetGlobalVariables();
+            LEASI_CHECKW(VarTable != nullptr, L"failed to retrieve global variables", L"");
+
+            int const Evaluated = static_cast<int>(VarTable->GetBool(InReply.nConditionalFunc));
+            int const Expected = InReply.nConditionalParam;
+
+            LEASI_CHECKW(Expected == 0 || Expected == 1,
+                L"unexpected bool {} param: {}", InReply.nConditionalFunc, Expected);
+
+            if (Evaluated != Expected)
+                return false;
+        }
 
         return true;
     }

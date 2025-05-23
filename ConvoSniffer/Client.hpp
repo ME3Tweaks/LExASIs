@@ -82,15 +82,24 @@ namespace ConvoSniffer
         void SendKeybinds();
         void SendReplyUpdate();
         void SendReplyUpdate(FString&& InBuffer);
-        static bool BuildReplyUpdate(UBioConversation* InConversation, FString& OutBuffer);
+
+        struct ConditionalParms final
+        {
+            ABioWorldInfo*      BioWorld;
+            int                 Argument;
+            unsigned long       ReturnValue;
+        };
+
+        static void BuildReplyUpdate(UBioConversation* InConversation, FString& OutBuffer);
+        static bool CheckReplyCondition(ABioWorldInfo* WorldInfo, UBioConversation* InConversation, FBioDialogReplyNode const& InReply);
 
         struct ReplyBundle final
         {
-            int             Index;
-            wchar_t const*  Style;
-            wchar_t const*  Category;
-            FString         Paraphrase;
-            FString         Text;
+            int                 Index;
+            wchar_t const*      Style;
+            wchar_t const*      Category;
+            FString             Paraphrase;
+            FString             Text;
         };
 
         HttpClient              Http;
