@@ -23,6 +23,12 @@ namespace TextureOverride
 
     #pragma pack(push, 1)
 
+#define EXTRA_SIZE 0
+#if defined(SDK_TARGET_LE1) || defined(SDK_TARGET_LE2)
+#undef EXTRA_SIZE
+#define EXTRA_SIZE 0x4 // LE1 and LE2 seem to have extra 4 bytes here for something... not sure what
+#endif
+
     struct CMipMapInfo final : public Common::AllocateThroughEngine
     {
         void*                   Vftable;            // 0x00
@@ -32,6 +38,9 @@ namespace TextureOverride
         std::int32_t            CompressedSize;     // 0x14
         unsigned char           Unknown_18[0x10];   // 0x18
         void*                   Data;               // 0x28
+#if defined(SDK_TARGET_LE1) ||defined(SDK_TARGET_LE2)
+        int                     LE1LE2Unknown;
+#endif
         int                     Unknown_2C;         // 0x2C
         void*                   Archive;            // 0x34
         int                     bNeedsFree;         // 0x3C
@@ -39,13 +48,13 @@ namespace TextureOverride
         std::int32_t            Height;             // 0x44
     };
 
-    static_assert(sizeof(CMipMapInfo) == 0x48);
+    static_assert(sizeof(CMipMapInfo) == 0x48 + EXTRA_SIZE);
     static_assert(offsetof(CMipMapInfo, Flags) == 0x08);
     static_assert(offsetof(CMipMapInfo, Data) == 0x28);
-    static_assert(offsetof(CMipMapInfo, Archive) == 0x34);
-    static_assert(offsetof(CMipMapInfo, bNeedsFree) == 0x3C);
-    static_assert(offsetof(CMipMapInfo, Width) == 0x40);
-    static_assert(offsetof(CMipMapInfo, Height) == 0x44);
+    static_assert(offsetof(CMipMapInfo, Archive) == 0x34  +EXTRA_SIZE);
+    static_assert(offsetof(CMipMapInfo, bNeedsFree) == 0x3C + EXTRA_SIZE);
+    static_assert(offsetof(CMipMapInfo, Width) == 0x40 + EXTRA_SIZE);
+    static_assert(offsetof(CMipMapInfo, Height) == 0x44 + EXTRA_SIZE);
 
     #pragma pack(pop)
 
