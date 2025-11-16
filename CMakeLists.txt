@@ -158,7 +158,7 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         set_target_properties (${PROJ_TARGET}-LE1 PROPERTIES
           VS_DEBUGGER_COMMAND "${LEASI_GAME1_WIN64}/MassEffect1.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS "-enableminidumps -nosplash"
+          VS_DEBUGGER_COMMAND_ARGUMENTS "-NOHOMEDIR -enableminidumps -nosplash"
           VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAME1_WIN64}"
         )
       endif ()
@@ -178,7 +178,7 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         set_target_properties (${PROJ_TARGET}-LE2 PROPERTIES
           VS_DEBUGGER_COMMAND "${LEASI_GAME2_WIN64}/MassEffect2.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS "-enableminidumps -nosplash"
+          VS_DEBUGGER_COMMAND_ARGUMENTS "-NOHOMEDIR -enableminidumps -nosplash"
           VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAME2_WIN64}"
         )
       endif ()
