@@ -1,6 +1,6 @@
 asi_target (TextureOverride
   SHARED
-  GAMES "LE3"
+  GAMES "LE1" "LE2" "LE3"
   SOURCES
     "Entry.cpp"
     "Entry.hpp"

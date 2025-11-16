@@ -3,28 +3,21 @@
 #include "TextureOverride/Hooks.hpp"
 #include "TextureOverride/Loading.hpp"
 
-
-#ifndef SDK_TARGET_LE3
-    // This is only a proof of concept for now.
-    #error TextureOverride target only supports LE3 at the moment.
-#endif
-
-
-SPI_PLUGINSIDE_SUPPORT(L"LE3TextureOverride", L"d00telemental", L"0.1.0", SPI_GAME_LE3, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"TextureOverride", L"d00telemental", L"0.1.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
 
 SPI_IMPLEMENT_ATTACH
 {
-    ::LESDK::Initializer Init{ InterfacePtr, "LE3TextureOverride" };
+    ::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "TextureOverride" };
 
     ::LESDK::InitializeConsole();
     ::TextureOverride::InitializeLogger();
     ::TextureOverride::InitializeGlobals(Init);
     ::TextureOverride::InitializeHooks(Init);
 
-    LEASI_INFO("hello there, {}!", "LE3TextureOverride");
+    LEASI_INFO("hello there, {}!", SDK_TARGET_NAME_A "TextureOverride");
     ::TextureOverride::LoadDlcManifests();
 
     return true;
@@ -42,7 +35,7 @@ namespace TextureOverride
 {
     void InitializeLogger()
     {
-        spdlog::default_logger()->set_pattern("%^[%H:%M:%S.%e] [%l] (LE3TextureOverride) %v%$");
+        spdlog::default_logger()->set_pattern("%^[%H:%M:%S.%e] [%l] (" SDK_TARGET_NAME_A "TextureOverride) %v%$");
         spdlog::default_logger()->set_level(spdlog::level::trace);
     }
 

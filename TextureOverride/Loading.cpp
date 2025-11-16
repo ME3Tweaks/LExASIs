@@ -25,7 +25,7 @@ namespace TextureOverride
                 continue;
             }
 
-            auto const ManifestPath = DlcPath / std::format(L"{}_TextureOverride.letexm", DlcName);
+            auto const ManifestPath = DlcPath / "CombinedTextureOverrides.btp";
             LEASI_TRACE(L"looking for manifest {}", ManifestPath.c_str());
 
             if (!fs::exists(ManifestPath))
