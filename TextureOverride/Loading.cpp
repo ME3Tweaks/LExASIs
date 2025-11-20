@@ -168,13 +168,18 @@ namespace TextureOverride
                     NextMip->Flags = static_cast<ETextureFlags>(NextMip->Flags | ExternalFlags);
                 }
                 NextMip->Elements = MipEntry.UncompressedSize;
-                NextMip->CompressedOffset = MipEntry.CompressedOffset;
                 NextMip->CompressedSize = MipEntry.CompressedSize;
-                NextMip->Data = nullptr;
                 if (MipEntry.ShouldHavePayload())
                 {
                     LEASI_CHECKA(!MipContents.empty(), "empty mip payload", "");
+                    NextMip->CompressedOffset = 0;  // << If something broke in v2, this is probably it?...
                     NextMip->Data = (void*)MipContents.data();
+                }
+                else
+                {
+                    LEASI_VERIFYA(MipEntry.CompressedOffset < INT32_MAX, "invalid offset {} for tfc mip", MipEntry.CompressedOffset);
+                    NextMip->CompressedOffset = static_cast<int32_t>(MipEntry.CompressedOffset);
+                    NextMip->Data = nullptr;
                 }
                 NextMip->bNeedsFree = FALSE;
                 NextMip->Archive = nullptr;

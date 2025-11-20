@@ -112,7 +112,7 @@ namespace TextureOverride
     {
         std::int32_t    UncompressedSize;       // Number of bytes this mip occupies when fully uncompressed.
         std::int32_t    CompressedSize;         // Number of bytes this mip currently occupies on the disk.
-        std::int32_t    CompressedOffset;       // Number of bytes from start of manifest or texture file cache to this mip's contents.
+        std::int64_t    CompressedOffset;       // Number of bytes from start of manifest or texture file cache to this mip's contents.
         std::int16_t    Width;                  // Size in horizontal dimension.
         std::int16_t    Height;                 // Size in vertical dimension.
         EMipFlags       Flags;                  // Additional settings for this mip.
@@ -131,6 +131,8 @@ namespace TextureOverride
             return !IsEmpty() && !IsOriginal() && !IsExternal();
         }
     };
+
+    static_assert(sizeof(CMipEntry) == 24);
 
     struct CGuid
     {
@@ -152,11 +154,11 @@ namespace TextureOverride
         wchar_t         FullPath[k_maxFullPathLength];  // Full path of the Texture2D entry being matched (replaced).
         wchar_t         TfcName[k_maxTfcNameLength];    // Name of the texture file cache used by external mips in this entry.
         CGuid           TfcGuid;                        // Guid of the texture file cache used by external mips in this entry.
-        std::int32_t    MipCount;                       // Number of mip records in @ref Mips, no more than @ref k_maxMipCount.
-        CMipEntry       Mips[k_maxMipCount];            // Mip records, their count and meta must match the original mips.
         EPixelFormat    Format;                         // Pixel format for all mips, must match the LE definition.
-        int             InternalFormatLODBias;          // The value of the property from the original replacement texture package. Used to allow higher mip levels than the LOD level in config.
-		int             NeverStream;                    // BOOL INT for alignment - The value of the property from the original replacement texture package.
+        std::int16_t    InternalFormatLODBias;          // Property value from the original replacement texture package, used to allow higher mip levels than the LOD level in config.
+        std::int8_t     NeverStream;                    // Property value from the original replacement texture package.
+        std::int8_t     MipCount;                       // Number of mip records in @ref Mips, no more than @ref k_maxMipCount.
+        CMipEntry       Mips[k_maxMipCount];            // Mip records, their count and meta must match the original mips.
 
         /** Retrieves the matched Texture2D path as an Unreal string. */
         FString GetFullPath() const;
