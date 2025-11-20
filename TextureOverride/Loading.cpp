@@ -112,8 +112,8 @@ namespace TextureOverride
         // Assuming the first mip is the largest so we can use its size.
         auto const& [FirstEntry, FirstContents] = Manifest.GetEntryMip(Entry, 0);
 
-        InTexture->TextureFileCacheGuid = InTexture->TFCFileGuid = (FGuid)Entry.TfcGuid;
-        InTexture->TextureFileCacheName = SFXName(*Entry.GetTfcName(), 0);
+        InTexture->TextureFileCacheGuid = InTexture->TFCFileGuid = Manifest.GetTfcGuid(&Entry);
+        InTexture->TextureFileCacheName = SFXName(*Manifest.GetTfcName(&Entry), 0);
         InTexture->OriginalSizeX = InTexture->SizeX = FirstEntry.Width;
         InTexture->OriginalSizeY = InTexture->SizeY = FirstEntry.Height;
         InTexture->Format = (unsigned char)Entry.Format;

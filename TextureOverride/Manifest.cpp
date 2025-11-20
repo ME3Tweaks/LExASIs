@@ -49,12 +49,6 @@ namespace TextureOverride
         return FString::Printf(L"%s", FullPath);
     }
 
-    FString CTextureEntry::GetTfcName() const
-    {
-        LEASI_VERIFYA(FindChar(TfcName, L'\0') != nullptr, "invalid tfc name", "");
-        return FString::Printf(L"%s", TfcName);
-    }
-
 
     // ! ManifestLoader implementation.
     // ========================================
@@ -146,18 +140,35 @@ namespace TextureOverride
             return false;
         }
 
-        auto const EntryTableEnd = sizeof(CManifestHeader) + sizeof(CTextureEntry) * Header->TextureCount;
+        std::size_t const TfcRefTableOffset = sizeof(CManifestHeader);
+        std::size_t const EntryTableOffset = TfcRefTableOffset + sizeof(CTfcRefEntry) * Header->TfcRefCount;
+        std::size_t const PayloadOffset = EntryTableOffset + sizeof(CTextureEntry) * Header->TextureCount;
+
+        auto const TfcRefTableEnd = EntryTableOffset;
+        if (CachedSize < TfcRefTableEnd)
+        {
+            CLOSE_ERROR("tfc reference table end ({}) out of manifest file bounds ({})", TfcRefTableEnd, CachedSize);
+            return false;
+        }
+
+        LEASI_VERIFYW(TfcRefTableEnd % 4 == 0, L"entry table end not aligned", L"");
+
+        TfcRefTable = std::span<CTfcRefEntry const>(
+            (CTfcRefEntry const*)((unsigned char const*)View + TfcRefTableOffset),
+            static_cast<std::size_t>(Header->TfcRefCount)
+        );
+
+        auto const EntryTableEnd = PayloadOffset;
         if (CachedSize < EntryTableEnd)
         {
             CLOSE_ERROR("entry table end ({}) out of manifest file bounds ({})", EntryTableEnd, CachedSize);
             return false;
         }
 
-        // TODO: This is an implicit requirement, we could try to force-align it.
         LEASI_VERIFYW(EntryTableEnd % 4 == 0, L"entry table end not aligned", L"");
 
         TextureMap.reserve(static_cast<std::size_t>(Header->TextureCount));
-        auto const* const TextureEntryStart = (CTextureEntry const*)((unsigned char const*)View + sizeof(CManifestHeader));
+        auto const* const TextureEntryStart = (CTextureEntry const*)((unsigned char const*)View + EntryTableOffset);
 
         for (std::size_t i = 0; i < Header->TextureCount; ++i)
         {
@@ -165,9 +176,9 @@ namespace TextureOverride
             FString const EntryFullPath = Entry->GetFullPath();
 
             LEASI_TRACE(L"adding manifest entry {} with {} mip(s) in texture file cache '{}'",
-                *EntryFullPath, Entry->MipCount, *Entry->GetTfcName());
+                *EntryFullPath, Entry->MipCount, *GetTfcName(Entry));
 
-            bool const bUniqueTexture = TextureMap.emplace(EntryFullPath, Entry).second;
+            auto [_, bUniqueTexture] = TextureMap.emplace(EntryFullPath, Entry);
             if (!bUniqueTexture)
             {
                 // This probably doesn't need to be a fatal error...
@@ -228,6 +239,26 @@ namespace TextureOverride
 
         auto const ViewPointer = reinterpret_cast<unsigned char const*>(View);
         return std::span<unsigned char const>(ViewPointer, CachedSize);
+    }
+
+    FGuid ManifestLoader::GetTfcGuid(CTextureEntry const* const Entry) const
+    {
+        LEASI_CHECKA(Entry != nullptr, "", "");
+        LEASI_VERIFYA(Entry->TfcRefIndex >= 0 && Entry->TfcRefIndex < int32_t(TfcRefTable.size()),
+            "entry's tfc reference index ({}) is out of bounds ({})", Entry->TfcRefIndex, TfcRefTable.size());
+
+        return (FGuid)TfcRefTable[Entry->TfcRefIndex].TfcGuid;
+    }
+
+    FString ManifestLoader::GetTfcName(CTextureEntry const* const Entry) const
+    {
+        LEASI_CHECKA(Entry != nullptr, "", "");
+        LEASI_VERIFYA(Entry->TfcRefIndex >= 0 && Entry->TfcRefIndex < int32_t(TfcRefTable.size()),
+            "entry's tfc reference index ({}) is out of bounds ({})", Entry->TfcRefIndex, TfcRefTable.size());
+
+        auto const& TfcName = TfcRefTable[Entry->TfcRefIndex].TfcName;
+        LEASI_VERIFYA(FindChar(TfcName, L'\0') != nullptr, "invalid tfc name", "");
+        return FString::Printf(L"%s", TfcName);
     }
 
     bool ManifestLoader::Compare(ManifestLoaderPointer const& Left, ManifestLoaderPointer const& Right)

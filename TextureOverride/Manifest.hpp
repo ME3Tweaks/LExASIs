@@ -99,14 +99,35 @@ namespace TextureOverride
         unsigned char   Magic[6];               // Magic bytes of 'LETEXM'.
         std::uint16_t   Version;                // Manifest version (not the mod version).
         std::uint32_t   TargetHash;             // FNV-1 (32 bit) of containing folder name, or UINT32_MAX for joint deployment.
-        std::uint32_t   TextureCount;           // Number of @ref CTextureEntry entries after this header.
-        unsigned char   Reserved[16];
+        std::uint32_t   TextureCount;           // Number of @ref CTextureEntry structs after this header and @ref CTfcRefEntry block.
+        std::uint32_t   TfcRefCount;            // Number of @ref CTfcRefEntry structs after this header.
+        unsigned char   Reserved[12];
 
         static constexpr decltype(Magic)        k_checkMagic{ 'L', 'E', 'T', 'E', 'X', 'M' };
-        static constexpr decltype(Version)      k_lastVersion{ 1 };
+        static constexpr decltype(Version)      k_lastVersion{ 2 };
     };
-
     static_assert(sizeof(CManifestHeader) == 32);
+
+    struct CGuid
+    {
+        std::int32_t A{ 0 }, B{ 0 }, C{ 0 }, D{ 0 };
+
+        explicit CGuid(FGuid const& In) : A{ In.A }, B{ In.B }, C{ In.C }, D{ In.D } {}
+        explicit operator FGuid() const { return FGuid{ .A = A, .B = B, .C = C, .D = D }; }
+
+        inline bool operator==(CGuid const& Other) { return A == Other.A && B == Other.B && C == Other.C && D == Other.D; }
+        inline bool operator!=(CGuid const& Other) { return !(*this == Other); }
+    };
+    static_assert(sizeof(CGuid) == 16);
+
+    struct CTfcRefEntry
+    {
+        static constexpr std::size_t k_maxTfcNameLength = 64;
+
+        wchar_t         TfcName[k_maxTfcNameLength];
+        CGuid           TfcGuid;
+    };
+    static_assert(sizeof(CTfcRefEntry) == 144);
 
     struct CMipEntry
     {
@@ -131,29 +152,15 @@ namespace TextureOverride
             return !IsEmpty() && !IsOriginal() && !IsExternal();
         }
     };
-
     static_assert(sizeof(CMipEntry) == 24);
-
-    struct CGuid
-    {
-        std::int32_t A{ 0 }, B{ 0 }, C{ 0 }, D{ 0 };
-
-        explicit CGuid(FGuid const& In) : A{ In.A }, B{ In.B }, C{ In.C }, D{ In.D } {}
-        explicit operator FGuid() const { return FGuid{ .A = A, .B = B, .C = C, .D = D }; }
-
-        inline bool operator==(CGuid const& Other) { return A == Other.A && B == Other.B && C == Other.C && D == Other.D; }
-        inline bool operator!=(CGuid const& Other) { return !(*this == Other); }
-    };
 
     struct CTextureEntry
     {
         static constexpr std::size_t k_maxFullPathLength = 256;
-        static constexpr std::size_t k_maxTfcNameLength = 64;
         static constexpr std::size_t k_maxMipCount = 13;
 
         wchar_t         FullPath[k_maxFullPathLength];  // Full path of the Texture2D entry being matched (replaced).
-        wchar_t         TfcName[k_maxTfcNameLength];    // Name of the texture file cache used by external mips in this entry.
-        CGuid           TfcGuid;                        // Guid of the texture file cache used by external mips in this entry.
+        std::int32_t    TfcRefIndex;                    // Index to the texture file cache record used by external mips in this entry.
         EPixelFormat    Format;                         // Pixel format for all mips, must match the LE definition.
         std::int16_t    InternalFormatLODBias;          // Property value from the original replacement texture package, used to allow higher mip levels than the LOD level in config.
         std::int8_t     NeverStream;                    // Property value from the original replacement texture package.
@@ -162,8 +169,6 @@ namespace TextureOverride
 
         /** Retrieves the matched Texture2D path as an Unreal string. */
         FString GetFullPath() const;
-        /** Retrieves the texture file cache name as an Unreal string. */
-        FString GetTfcName() const;
     };
 
 #pragma pack(pop)
@@ -177,6 +182,7 @@ namespace TextureOverride
 
     class ManifestLoader final : public NonCopyable
     {
+        using TfcRefTable_t = std::span<CTfcRefEntry const>;
         using TextureMap_t = std::unordered_map<FString, CTextureEntry const*>;
 
         HANDLE          FileHandle{ INVALID_HANDLE_VALUE };
@@ -184,6 +190,7 @@ namespace TextureOverride
         LPVOID          View{ NULL };
         SIZE_T          CachedSize{ 0 };
         TextureMap_t    TextureMap{};
+        TfcRefTable_t   TfcRefTable{};
         int             MountPriority{ 0 };
 
     public:
@@ -232,6 +239,11 @@ namespace TextureOverride
         CManifestHeader const& GetMappedHeader() const;
         /** Retrieves the mapped memory view. */
         std::span<unsigned char const> GetMappedView() const;
+
+        /** Retrieves an entry's texture file cache GUID. */
+        FGuid GetTfcGuid(CTextureEntry const* Entry) const;
+        /** Retrieves an entry's texture file cache name as an Unreal string. */
+        FString GetTfcName(CTextureEntry const* Entry) const;
 
         inline int GetMountPriority() const { return MountPriority; }
         inline void SetMountPriority(int const InMountPriority) { MountPriority = InMountPriority; }
