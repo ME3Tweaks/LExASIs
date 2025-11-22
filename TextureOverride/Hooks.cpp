@@ -20,4 +20,6 @@ namespace TextureOverride
             UpdateTextureFromManifest(Context, *Manifest, *Entry);
         }
     }
+
+    t_OodleDecompress* OodleDecompress = nullptr;
 }

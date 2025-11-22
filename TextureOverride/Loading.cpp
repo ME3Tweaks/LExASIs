@@ -2,7 +2,7 @@
 #include "TextureOverride/Loading.hpp"
 #include "TextureOverride/Manifest.hpp"
 #include "TextureOverride/Mount.hpp"
-
+#include "TextureOverride/Hooks.hpp"
 namespace fs = std::filesystem;
 
 
@@ -112,8 +112,16 @@ namespace TextureOverride
         // Assuming the first mip is the largest so we can use its size.
         auto const& [FirstEntry, FirstContents] = Manifest.GetEntryMip(Entry, 0);
 
-        InTexture->TextureFileCacheGuid = InTexture->TFCFileGuid = (FGuid)Entry.TfcGuid;
-        InTexture->TextureFileCacheName = SFXName(*Entry.GetTfcName(), 0);
+        if (Entry.GetTfcName().Length() == 0) {
+            // Package stored. Remove TFC name
+            // How to reset this?
+            // InTexture->TextureFileCacheGuid = FGuid();
+            InTexture->TextureFileCacheName = SFXName(L"None", 0);
+        }
+        else {
+            InTexture->TextureFileCacheGuid = InTexture->TFCFileGuid = (FGuid)Entry.TfcGuid;
+            InTexture->TextureFileCacheName = SFXName(*Entry.GetTfcName(), 0);
+        }
         InTexture->OriginalSizeX = InTexture->SizeX = FirstEntry.Width;
         InTexture->OriginalSizeY = InTexture->SizeY = FirstEntry.Height;
         InTexture->Format = (unsigned char)Entry.Format;
@@ -151,7 +159,7 @@ namespace TextureOverride
         }
 
         // Allocate a new indirect mip array.
-        auto populatedMipCount = 0;
+        int mipCount = 0;
         {
             auto& Mips = *new ((void*)&InTexture->Mips) TArray<CMipMapInfo*>();
             for (int i = 0; i < Entry.MipCount; ++i)
@@ -168,14 +176,6 @@ namespace TextureOverride
                     auto const ExternalFlags = ETF_External | ETF_OodleCompression;
                     NextMip->Flags = static_cast<ETextureFlags>(NextMip->Flags | ExternalFlags);
                 }
-                else {
-                    if (MipEntry.IsOodleCompressed())
-                    {
-						// Mip was converted to oodle compressed during serialization.
-                        NextMip->Flags = static_cast<ETextureFlags>(NextMip->Flags | ETF_OodleCompression);
-                        LEASI_TRACE(L"mip {}x{} stored with oodle compression", MipEntry.Width, MipEntry.Height);
-					}
-                }
                 NextMip->Elements = MipEntry.UncompressedSize;
                 NextMip->CompressedOffset = MipEntry.CompressedOffset;
                 NextMip->CompressedSize = MipEntry.CompressedSize;
@@ -183,12 +183,28 @@ namespace TextureOverride
                 if (MipEntry.ShouldHavePayload())
                 {
                     LEASI_CHECKA(!MipContents.empty(), "empty mip payload", "");
-                    NextMip->CompressedOffset = 0;
-                    NextMip ->Data = (*GMalloc)->Malloc(DWORD(MipEntry.CompressedSize), UN_DEFAULT_ALIGNMENT);
-                    std::copy_n(MipContents.data(), MipEntry.CompressedSize, (BYTE*)NextMip -> Data);
-                    //NextMip->Data = (void*)MipContents.data();
-                    NextMip->bNeedsFree = true;
-                    populatedMipCount++;
+
+                    if (MipEntry.IsOodleCompressed())
+                    {
+                        // Mip was converted to oodle compressed during serialization.
+                        // We can't seem to use oodle texture decompression, so we instead
+                        // decompress this entirely.
+                        LEASI_TRACE(L"Decompressing mip {}x{}", MipEntry.Width, MipEntry.Height);
+
+                        // Allocate decompressed space
+                        NextMip->Data = (*GMalloc)->Malloc(DWORD(MipEntry.UncompressedSize), UN_DEFAULT_ALIGNMENT);
+                        OodleDecompress(0, NextMip->Data, MipEntry.UncompressedSize, (void*) MipContents.data(), MipEntry.CompressedSize);
+                        NextMip->CompressedOffset = 0;
+                        NextMip->bNeedsFree = true;
+                    }
+                    else {
+
+                        NextMip->CompressedOffset = 0;
+                        NextMip->Data = (*GMalloc)->Malloc(DWORD(MipEntry.CompressedSize), UN_DEFAULT_ALIGNMENT);
+                        std::copy_n(MipContents.data(), MipEntry.CompressedSize, (BYTE*)NextMip->Data);
+                        //NextMip->Data = (void*)MipContents.data();
+                        NextMip->bNeedsFree = true;
+                    }
                 }
                 else {
                     LEASI_VERIFYA(MipEntry.CompressedOffset < INT32_MAX, "invalid offset {} for tfc mip", MipEntry.CompressedOffset);
@@ -202,6 +218,7 @@ namespace TextureOverride
 
                 Mips.Add(NextMip);
             }
+            mipCount = Mips.Count();
         }
 
         // Update InternalFormatLODBias to allow higher than LOD level mips to show without
@@ -215,6 +232,6 @@ namespace TextureOverride
 
         // This must be set so engine knows how many mips are populated.
         // LEC sets this, it seemed to be required when we wrote it back then
-        InTexture->MipTailBaseIdx = populatedMipCount;
+        InTexture->MipTailBaseIdx = mipCount - 1;
     }
 }
