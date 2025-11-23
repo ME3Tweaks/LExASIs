@@ -86,7 +86,7 @@ namespace TextureOverride
 
     bool ManifestLoader::Load(std::wstring_view const InPath, FString& OutError)
     {
-        LEASI_CHECKA(!InPath.empty(), "empty input path", "");
+        LEASI_CHECKW(!InPath.empty(), L"empty input path", L"");
 
         FileHandle = ::CreateFileW(InPath.data(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0u, NULL);
         if (FileHandle == INVALID_HANDLE_VALUE)
@@ -121,14 +121,14 @@ namespace TextureOverride
         LARGE_INTEGER OutFileSize{};
         if (0 == GetFileSizeEx(FileHandle, &OutFileSize))
         {
-            CLOSE_ERROR("failed to cache manifest file size");
+            CLOSE_ERROR(L"failed to cache manifest file size");
             return false;
         }
 
         CachedSize = OutFileSize.QuadPart;
         if (CachedSize < sizeof(CManifestHeader))
         {
-            CLOSE_ERROR("manifest file too small ({}) for header ({})", CachedSize, sizeof(CManifestHeader));
+            CLOSE_ERROR(L"manifest file too small ({}) for header ({})", CachedSize, sizeof(CManifestHeader));
             return false;
         }
 
@@ -136,35 +136,41 @@ namespace TextureOverride
         if (0 != std::memcmp(Header->Magic, CManifestHeader::k_checkMagic, sizeof(CManifestHeader::k_checkMagic))
             || Header->Version > CManifestHeader::k_lastVersion)
         {
-            CLOSE_ERROR("manifest file has invalid magic or version");
+            CLOSE_ERROR(L"manifest file has invalid magic or version");
             return false;
         }
 
-        std::size_t const TfcRefTableOffset = sizeof(CManifestHeader);
-        std::size_t const EntryTableOffset = TfcRefTableOffset + sizeof(CTfcRefEntry) * Header->TfcRefCount;
-        std::size_t const PayloadOffset = EntryTableOffset + sizeof(CTextureEntry) * Header->TextureCount;
+        // Texture file cache references.
 
-        auto const TfcRefTableEnd = EntryTableOffset;
+        std::size_t const TfcRefTableOffset = Header->TfcRefOffset;
+        std::size_t const TfcRefTableEnd = TfcRefTableOffset + sizeof(CTfcRefEntry) * Header->TfcRefCount;
+
         if (CachedSize < TfcRefTableEnd)
         {
-            CLOSE_ERROR("tfc reference table end ({}) out of manifest file bounds ({})", TfcRefTableEnd, CachedSize);
+            CLOSE_ERROR(L"tfc reference table end ({}) out of manifest file bounds ({})", TfcRefTableEnd, CachedSize);
             return false;
         }
 
-        LEASI_VERIFYW(TfcRefTableEnd % 4 == 0, L"entry table end not aligned", L"");
+        LEASI_VERIFYW(TfcRefTableOffset % 4 == 0, L"tfc ref table not aligned", L"");
+        LEASI_VERIFYW(TfcRefTableEnd % 4 == 0, L"tfc ref table end not aligned", L"");
 
         TfcRefTable = std::span<CTfcRefEntry const>(
             (CTfcRefEntry const*)((unsigned char const*)View + TfcRefTableOffset),
             static_cast<std::size_t>(Header->TfcRefCount)
         );
 
-        auto const EntryTableEnd = PayloadOffset;
+        // Texture entries.
+
+        std::size_t const EntryTableOffset = sizeof(CManifestHeader);
+        std::size_t const EntryTableEnd = EntryTableOffset + sizeof(CTextureEntry) * Header->TextureCount;
+
         if (CachedSize < EntryTableEnd)
         {
-            CLOSE_ERROR("entry table end ({}) out of manifest file bounds ({})", EntryTableEnd, CachedSize);
+            CLOSE_ERROR(L"entry table end ({}) out of manifest file bounds ({})", EntryTableEnd, CachedSize);
             return false;
         }
 
+        LEASI_VERIFYW(EntryTableOffset % 4 == 0, L"entry table not aligned", L"");
         LEASI_VERIFYW(EntryTableEnd % 4 == 0, L"entry table end not aligned", L"");
 
         TextureMap.reserve(static_cast<std::size_t>(Header->TextureCount));

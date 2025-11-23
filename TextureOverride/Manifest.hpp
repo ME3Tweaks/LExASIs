@@ -98,10 +98,11 @@ namespace TextureOverride
     {
         unsigned char   Magic[6];               // Magic bytes of 'LETEXM'.
         std::uint16_t   Version;                // Manifest version (not the mod version).
-        std::uint32_t   TargetHash;             // FNV-1 (32 bit) of containing folder name, or UINT32_MAX for joint deployment.
-        std::uint32_t   TextureCount;           // Number of @ref CTextureEntry structs after this header and @ref CTfcRefEntry block.
-        std::uint32_t   TfcRefCount;            // Number of @ref CTfcRefEntry structs after this header.
-        unsigned char   Reserved[12];
+        std::uint32_t   TargetHash;             // FNV-1 (32 bit) of containing folder name.
+        std::uint32_t   TextureCount;           // Number of @ref CTextureEntry structs after this header.
+        std::uint32_t   TfcRefCount;            // Number of @ref CTfcRefEntry structs at @ref TfcRefOffset.
+        std::uint64_t   TfcRefOffset;           // Offset to the @ ref CTfcRefEntry structs.
+        unsigned char   Reserved[4];
 
         static constexpr decltype(Magic)        k_checkMagic{ 'L', 'E', 'T', 'E', 'X', 'M' };
         static constexpr decltype(Version)      k_lastVersion{ 2 };
