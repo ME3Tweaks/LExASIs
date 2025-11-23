@@ -156,7 +156,6 @@ namespace TextureOverride
         }
 
         // Allocate a new indirect mip array.
-        int mipCount = 0;
         {
             auto& Mips = *new ((void*)&InTexture->Mips) TArray<CMipMapInfo*>();
             for (int i = 0; i < Entry.MipCount; ++i)
@@ -189,11 +188,10 @@ namespace TextureOverride
 
                         // Allocate decompressed space
                         NextMip->Data = (*GMalloc)->Malloc(DWORD(MipEntry.UncompressedSize), UN_DEFAULT_ALIGNMENT);
-                        auto result = OodleDecompress(0x400, NextMip->Data, MipEntry.UncompressedSize, (void*) MipContents.data(), MipEntry.CompressedSize);
-                        if (result == 0)
+                        void* const Result = OodleDecompress(0x400, NextMip->Data, MipEntry.UncompressedSize, (void*) MipContents.data(), MipEntry.CompressedSize);
+                        if (Result == 0)
                         {
-                            // uh oh
-                            LEASI_ERROR(L"error decompressing oodle data");
+                            LEASI_ERROR(L"error decompressing oodle data for '{}'", *Entry.GetFullPath());
                         }
                         NextMip->CompressedOffset = 0;
                         NextMip->bNeedsFree = TRUE;
@@ -230,8 +228,10 @@ namespace TextureOverride
 
                 Mips.Add(NextMip);
             }
-            mipCount = Mips.Count();
         }
+
+        // Copy SRGB flag from manifest
+        InTexture->SRGB = Entry.bSRGB;
 
         // Update InternalFormatLODBias to allow higher than LOD level mips to show without
         // package edits.
@@ -240,13 +240,10 @@ namespace TextureOverride
         // Update NeverStream based on incoming texture entry.
         // Validation of this will come from our editor tools, don't make it our
         // job to handle it.
-        InTexture->NeverStream = Entry.NeverStream;
-
-        // Copy SRGB flag from manifest
-        InTexture->SRGB = Entry.SRGB;
+        InTexture->NeverStream = Entry.bNeverStream;
 
         // This must be set so engine knows how many mips are populated.
         // LEC sets this, it seemed to be required when we wrote it back then
-        InTexture->MipTailBaseIdx = mipCount - 1;
+        InTexture->MipTailBaseIdx = InTexture->Mips.ArrayNum - 1;
     }
 }

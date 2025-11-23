@@ -165,9 +165,9 @@ namespace TextureOverride
         wchar_t         FullPath[k_maxFullPathLength];  // Full path of the Texture2D entry being matched (replaced).
         std::int32_t    TfcRefIndex;                    // Index to the texture file cache record used by external mips in this entry.
         EPixelFormat    Format;                         // Pixel format for all mips, must match the LE definition.
-        std::int32_t    SRGB;                           // Property value from the original replacement texture package.
-        std::int16_t    InternalFormatLODBias;          // Property value from the original replacement texture package, used to allow higher mip levels than the LOD level in config.
-        std::int8_t     NeverStream;                    // Property value from the original replacement texture package.
+        std::int8_t     bSRGB;                          // Property value from the original replacement texture package.
+        std::int8_t     InternalFormatLODBias;          // Property value from the original replacement texture package, used to allow higher mip levels than the LOD level in config.
+        std::int8_t     bNeverStream;                   // Property value from the original replacement texture package.
         std::int8_t     MipCount;                       // Number of mip records in @ref Mips, no more than @ref k_maxMipCount.
         CMipEntry       Mips[k_maxMipCount];            // Mip records, their count and meta must match the original mips.
 
