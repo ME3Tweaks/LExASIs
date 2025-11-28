@@ -7,10 +7,10 @@
 
 #ifndef SDK_TARGET_LE1
     // This targets the only game with environment reflection probes.
-    #error GPUCrusher target only supports LE1 at the moment.
+    #error SSRUnlocker target only supports LE1 at the moment.
 #endif
 
-SPI_PLUGINSIDE_SUPPORT(L"LE1GPUCrusher", L"d00telemental", L"0.2.0", SPI_GAME_LE1, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(L"LE1SSRUnlocker", L"d00telemental", L"0.2.0", SPI_GAME_LE1, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -19,7 +19,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 // ========================================
 
 #ifdef _DEBUG
-    #define writeln(frmt, ...)   fwprintf_s(stdout, L"LE1GPUCrusher - " frmt "\n", __VA_ARGS__);
+    #define writeln(frmt, ...)   fwprintf_s(stdout, L"LE1SSRUnlocker - " frmt "\n", __VA_ARGS__);
 #else
     #define writeln(frmt, ...)
 #endif
@@ -48,8 +48,8 @@ SPI_IMPLEMENT_ATTACH
     LESDK::InitializeConsole();
 #endif
 
-    LESDK::Initializer Context(InterfacePtr, "LE1GPUCrusher");
-    writeln(L"Attach - hello from LE1GPUCrusher v2!");
+    LESDK::Initializer Context(InterfacePtr, "LE1SSRUnlocker");
+    // writeln(L"Attach - hello from LE1GPUCrusher v2!");
 
     auto* const ReflectionUpdateRequired = Context.Resolve(REFLECTIONUPDATEREQUIRED_PAT);
     if (ReflectionUpdateRequired == nullptr) [[unlikely]]

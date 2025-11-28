@@ -1,4 +1,4 @@
-asi_target (GPUCrusher
+asi_target (SSRUnlocker
   SHARED
   GAMES "LE1"
   SOURCES
