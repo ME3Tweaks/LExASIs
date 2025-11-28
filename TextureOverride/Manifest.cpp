@@ -302,6 +302,7 @@ namespace TextureOverride
             auto const [Offset, Count, UncompressedSize] = std::tie(Resolved.Entry.CompressedOffset, Resolved.Entry.CompressedSize, Resolved.Entry.UncompressedSize);
             //LEASI_TRACE(L"{}x{} mip @ relative 0x{:X} with compressed size {} bytes, uncompressed: {}", Resolved.Entry.Width, Resolved.Entry.Height, Offset, Count, UncompressedSize);
             Resolved.Payload = GetMappedView().subspan(static_cast<std::size_t>(Offset), static_cast<std::size_t>(Count));
+            LEASI_UNUSED(UncompressedSize);
         }
 
         return Resolved;

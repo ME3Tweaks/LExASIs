@@ -1,9 +1,11 @@
 #include <filesystem>
 #include <array>
+
 #include "TextureOverride/Loading.hpp"
 #include "TextureOverride/Manifest.hpp"
 #include "TextureOverride/Mount.hpp"
 #include "TextureOverride/Hooks.hpp"
+
 namespace fs = std::filesystem;
 
 
@@ -199,12 +201,12 @@ namespace TextureOverride
                         NextMip->bNeedsFree = TRUE;
 
                         // Verify
-						/*auto data = (int*)NextMip->Data;
+                        /*auto data = (int*)NextMip->Data;
                         auto textureTag = data[0];
                         if (textureTag != 0x9E2A83C1) // not sure what tag is... this doesn't seem right
                         {
                             LEASI_WARN(L"Decompressed mip has wrong texture tag");
-						}*/
+                        }*/
                     }
                     else
                     {
@@ -237,7 +239,7 @@ namespace TextureOverride
 
         // Update InternalFormatLODBias to allow higher than LOD level mips to show without
         // package edits.
-		InTexture->InternalFormatLODBias = Entry.InternalFormatLODBias;
+        InTexture->InternalFormatLODBias = Entry.InternalFormatLODBias;
     
         // Update NeverStream based on incoming texture entry.
         // Validation of this will come from our editor tools, don't make it our

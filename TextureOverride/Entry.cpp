@@ -116,7 +116,7 @@ namespace TextureOverride
         OodleDecompress = Init.ResolveTyped<t_OodleDecompress>(OODLE_DECOMPRESS_RVA);
 
 #if defined(SDK_TARGET_LE3)
-		// Find TFC registration function.
+        // Find TFC registration function.
         RegisterTFC = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
         CHECK_RESOLVED(RegisterTFC);
 

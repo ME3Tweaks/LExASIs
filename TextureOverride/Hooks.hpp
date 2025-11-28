@@ -56,31 +56,39 @@ namespace TextureOverride
     // Contains information about a DLC module - TFC, TOC, config, etc
     struct SFXAdditionalContent
     {
-        unsigned char Unknown1[0x64];
-        FString RelativeDLCPath; // 0x64
-        TArray<BYTE> PCConsoleTOC; // 0x74
-        TArray<BYTE> ConfigFile; //0x84
-        unsigned char Unknown2[0x1C]; // 0x94
-        FGuid TFCGuid; // 0xB4 // Textures_DLC_....tfc
-        int UnknownInt3;
-        int someFlags; // 0xC8 - Seems to indicate state of various things on DLC
-        int UnknownInt4;
-        int UnknownInt5;
-        void* PointerToGameContent; // 0xD4
+        unsigned char           Unknown1[0x64];
+        FString                 RelativeDLCPath;        // 0x64
+        TArray<BYTE>            PCConsoleTOC;           // 0x74
+        TArray<BYTE>            ConfigFile;             // 0x84
+        unsigned char           Unknown2[0x1C];         // 0x94
+        FGuid                   TFCGuid;                // 0xB0 [0xB4] - Textures_DLC_....tfc
+        int                     UnknownInt3;
+        int                     Flags;                  // 0xC4 [0xC8] - Seems to indicate state of various things on DLC
+        int                     UnknownInt4;
+        int                     UnknownInt5;
+        void*                   PointerToGameContent;   // 0xD0 [0xD4]
     };
 #pragma pack(pop)
 
-	// Utility method for getting DLC name from SFXAdditionalContent
-    using tGetDLCName = wchar_t* (SFXAdditionalContent* additionalContent, FString* outDlcName);
+    static_assert(offsetof(SFXAdditionalContent, RelativeDLCPath) == 0x64);
+    static_assert(offsetof(SFXAdditionalContent, PCConsoleTOC) == 0x74);
+    static_assert(offsetof(SFXAdditionalContent, ConfigFile) == 0x84);
+    static_assert(offsetof(SFXAdditionalContent, Unknown2) == 0x94);
+    static_assert(offsetof(SFXAdditionalContent, TFCGuid) == 0xB0);
+    static_assert(offsetof(SFXAdditionalContent, Flags) == 0xC4);
+    static_assert(offsetof(SFXAdditionalContent, PointerToGameContent) == 0xD0);
+
+    // Utility method for getting DLC name from SFXAdditionalContent
+    using tGetDLCName = wchar_t* (SFXAdditionalContent* Content, FString* OutDlcName);
     extern tGetDLCName* GetDLCName;
 
     // TFC Registration
-    using tRegisterTFC = void (FString* name);
+    using tRegisterTFC = void (FString* Name);
     extern tRegisterTFC* RegisterTFC;
 
     // DLC TFC Registration Hook
-    using tRegisterDLCTFC = unsigned long long(SFXAdditionalContent* additionalContent);
+    using tRegisterDLCTFC = unsigned long long (SFXAdditionalContent* Content);
     extern tRegisterDLCTFC* RegisterDLCTFC_orig;
-    unsigned long long RegisterDLCTFC_hook(SFXAdditionalContent* additionalContent);
+    unsigned long long RegisterDLCTFC_hook(SFXAdditionalContent* Content);
 #endif
 }

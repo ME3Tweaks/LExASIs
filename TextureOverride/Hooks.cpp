@@ -1,6 +1,9 @@
 #include "TextureOverride/Hooks.hpp"
 #include "TextureOverride/Loading.hpp"
 
+namespace fs = std::filesystem;
+
+
 namespace TextureOverride
 {
 
@@ -75,62 +78,59 @@ namespace TextureOverride
 
 
 #if defined(SDK_TARGET_LE3)
+
     tRegisterTFC* RegisterTFC = nullptr;
     tGetDLCName* GetDLCName = nullptr;
+
     tRegisterDLCTFC* RegisterDLCTFC_orig = nullptr;
-
-    // List of already mounted DLC names, so we don't mount twice.
-    std::set<std::wstring> MountedDLCNames{};
-    unsigned long long RegisterDLCTFC_hook(SFXAdditionalContent* content)
+    unsigned long long RegisterDLCTFC_hook(SFXAdditionalContent* const Content)
     {
-        // Run the original DLC TFC registration method
-        auto res = RegisterDLCTFC_orig(content);
+        // Record already mounted DLC names, so we don't mount twice.
+        static std::set<std::wstring> MountedDLCNames{};
 
-        // Get name of DLC
-        FString dlcName;
-        GetDLCName(content, &dlcName);
+        unsigned long long Result = RegisterDLCTFC_orig(Content);
 
-        if (dlcName.Length() <= 8 || wcsncmp(dlcName.Chars(), L"DLC_MOD_", 8) != 0)
-            return res; // Not a DLC mod
+        FString DlcName;
+        GetDLCName(Content, &DlcName);
 
-        auto dlcNameStr = std::wstring(dlcName.Chars());
-        if (MountedDLCNames.find(dlcNameStr) != MountedDLCNames.end())
+        if (DlcName.Length() <= 8 || !DlcName.StartsWith(L"DLC_MOD_"))
         {
-            return res; // The DLC TFCs were already mounted. Game seems to call this twice for some reason.
+            // Not a DLC mod.
+            return Result;
         }
 
-        MountedDLCNames.insert(dlcNameStr);
-
-        std::filesystem::path cookedPathStr = content->RelativeDLCPath.Chars();
-        auto dlcCookedPath = cookedPathStr.append(L"CookedPCConsole");
-
-        if (std::filesystem::exists(dlcCookedPath))
+        std::wstring DlcNameStr{ DlcName.Chars() };
+        if (MountedDLCNames.contains(DlcNameStr))
         {
-            std::wstring defaultPath = dlcCookedPath;
-            defaultPath += L"\\Textures_";
-            defaultPath += dlcName.Chars();
-            defaultPath += L".tfc";
+            // The DLC TFCs were already mounted. Game seems to call this twice for some reason.
+            return Result;
+        }
+        MountedDLCNames.insert(DlcNameStr);
+
+        fs::path const CookedPath{ Content->RelativeDLCPath.Chars() };
+        fs::path const DlcCookedPath = CookedPath / L"CookedPCConsole";
+
+        if (fs::exists(DlcCookedPath))
+        {
+            FString const TfcNameStem = FString::Printf(L"Textures_%s.tfc", *DlcName);
+            fs::path const TfcDefaultPath = DlcCookedPath / *TfcNameStem;
 
             // Find TFCs in CookedPCConsole folder
-            std::wstring ext(L".tfc");
-
-            for (auto& p : std::filesystem::recursive_directory_iterator(dlcCookedPath))
+            for (fs::directory_entry const& p : fs::directory_iterator(DlcCookedPath))
             {
-                if (p.path().extension() == ext)
+                if (p.path().extension() == L".tfc")
                 {
-                    auto lpath = p.path();
-                    auto rpath = defaultPath;
-                    if (p.path().compare(defaultPath) != 0) // Not the default TFC
+                    if (p.path().compare(TfcDefaultPath) != 0)  // Not the default TFC
                     {
                         LEASI_INFO(L"Registering additional mod TFC: {}", p.path().c_str());
-                        FString tfcName(const_cast<wchar_t*>(p.path().c_str()));
-                        RegisterTFC(&tfcName);
+                        FString TfcName{ p.path().c_str() };
+                        RegisterTFC(&TfcName);
                     }
                 }
             }
         }
 
-        return res;
+        return Result;
     }
 
 #endif
