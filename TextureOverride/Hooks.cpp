@@ -54,7 +54,6 @@ namespace TextureOverride
             {
                 CTextureEntry const* const Entry = Manifest->FindEntry(TextureFullName);
                 if (Entry == nullptr) continue;
-
                 LEASI_INFO(L"UTexture2D::Serialize: replacing {}", *TextureFullName);
                 UpdateTextureFromManifest(Context, *Manifest, *Entry);
                 return;  // apply only the highest-priority manifest mount
@@ -71,4 +70,66 @@ namespace TextureOverride
     }
 
     t_OodleDecompress* OodleDecompress = nullptr;
+
+
+#if defined(SDK_TARGET_LE3)
+    tRegisterTFC* RegisterTFC = nullptr;
+    tGetDLCName* GetDLCName = nullptr;
+    tRegisterDLCTFC* RegisterDLCTFC_orig = nullptr;
+
+    // List of already mounted DLC names, so we don't mount twice.
+    std::set<std::wstring> MountedDLCNames{};
+    unsigned long long RegisterDLCTFC_hook(SFXAdditionalContent* content)
+    {
+        // Run the original DLC TFC registration method
+        auto res = RegisterDLCTFC_orig(content);
+
+        // Get name of DLC
+        FString dlcName;
+        GetDLCName(content, &dlcName);
+
+        if (dlcName.Length() <= 8 || wcsncmp(dlcName.Chars(), L"DLC_MOD_", 8) != 0)
+            return res; // Not a DLC mod
+
+        auto dlcNameStr = std::wstring(dlcName.Chars());
+        if (MountedDLCNames.find(dlcNameStr) != MountedDLCNames.end())
+        {
+            return res; // The DLC TFCs were already mounted. Game seems to call this twice for some reason.
+        }
+
+        MountedDLCNames.insert(dlcNameStr);
+
+        std::filesystem::path cookedPathStr = content->RelativeDLCPath.Chars();
+        auto dlcCookedPath = cookedPathStr.append(L"CookedPCConsole");
+
+        if (std::filesystem::exists(dlcCookedPath))
+        {
+            std::wstring defaultPath = dlcCookedPath;
+            defaultPath += L"\\Textures_";
+            defaultPath += dlcName.Chars();
+            defaultPath += L".tfc";
+
+            // Find TFCs in CookedPCConsole folder
+            std::wstring ext(L".tfc");
+
+            for (auto& p : std::filesystem::recursive_directory_iterator(dlcCookedPath))
+            {
+                if (p.path().extension() == ext)
+                {
+                    auto lpath = p.path();
+                    auto rpath = defaultPath;
+                    if (p.path().compare(defaultPath) != 0) // Not the default TFC
+                    {
+                        LEASI_INFO(L"Registering additional mod TFC: {}", p.path().c_str());
+                        FString tfcName(const_cast<wchar_t*>(p.path().c_str()));
+                        RegisterTFC(&tfcName);
+                    }
+                }
+            }
+        }
+
+        return res;
+    }
+
+#endif
 }

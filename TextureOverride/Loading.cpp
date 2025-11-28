@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <array>
 #include "TextureOverride/Loading.hpp"
 #include "TextureOverride/Manifest.hpp"
 #include "TextureOverride/Mount.hpp"
@@ -109,8 +110,9 @@ namespace TextureOverride
 
         if (Entry.MipCount != InTexture->Mips.ArrayNum)
         {
+            // Seems to be fine.
             // Idk how much this would break.
-            LEASI_WARN("UpdateTextureFromManifest: updating with different mip count, not well-tested");
+            //LEASI_WARN("UpdateTextureFromManifest: updating with different mip count, not well-tested");
         }
 
         // Assuming the first mip is the largest so we can use its size.
@@ -183,7 +185,7 @@ namespace TextureOverride
                         // Mip was converted to oodle compressed during serialization.
                         // We can't seem to use oodle texture decompression, so we instead
                         // decompress this entirely.
-                        LEASI_TRACE(L"decompressing mip {}x{}", MipEntry.Width, MipEntry.Height);
+                        // LEASI_TRACE(L"decompressing mip {}x{}", MipEntry.Width, MipEntry.Height);
 
                         // Allocate decompressed space
                         NextMip->Data = (*GMalloc)->Malloc(DWORD(MipEntry.UncompressedSize), UN_DEFAULT_ALIGNMENT);
@@ -193,6 +195,7 @@ namespace TextureOverride
                             LEASI_ERROR(L"error decompressing oodle data for '{}'", *Entry.GetFullPath());
                         }
                         NextMip->CompressedOffset = 0;
+                        NextMip->CompressedSize = NextMip->Elements; // Mip is now decompressed
                         NextMip->bNeedsFree = TRUE;
 
                         // Verify

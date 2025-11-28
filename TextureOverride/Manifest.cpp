@@ -299,7 +299,8 @@ namespace TextureOverride
         // All mips that are "empty", "original", or "external" must specify no embedded payload.
         if (!Resolved.Entry.IsEmpty() && !Resolved.Entry.IsOriginal() && !Resolved.Entry.IsExternal())
         {
-            auto const [Offset, Count] = std::tie(Resolved.Entry.CompressedOffset, Resolved.Entry.CompressedSize);
+            auto const [Offset, Count, UncompressedSize] = std::tie(Resolved.Entry.CompressedOffset, Resolved.Entry.CompressedSize, Resolved.Entry.UncompressedSize);
+            //LEASI_TRACE(L"{}x{} mip @ relative 0x{:X} with compressed size {} bytes, uncompressed: {}", Resolved.Entry.Width, Resolved.Entry.Height, Offset, Count, UncompressedSize);
             Resolved.Payload = GetMappedView().subspan(static_cast<std::size_t>(Offset), static_cast<std::size_t>(Count));
         }
 

@@ -115,6 +115,22 @@ namespace TextureOverride
         // Find oodle decompression function.
         OodleDecompress = Init.ResolveTyped<t_OodleDecompress>(OODLE_DECOMPRESS_RVA);
 
+#if defined(SDK_TARGET_LE3)
+		// Find TFC registration function.
+        RegisterTFC = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
+        CHECK_RESOLVED(RegisterTFC);
+
+        // Find GetDLCName function.
+        GetDLCName = Init.ResolveTyped<tGetDLCName>(GET_DLC_NAME_RVA);
+        CHECK_RESOLVED(GetDLCName);
+
+        // Hook DLC TFC registration
+        auto const RegisterDLCTFC_target = Init.ResolveTyped<tRegisterDLCTFC>(REGISTER_DLC_TFC_RVA);
+        CHECK_RESOLVED(RegisterDLCTFC_target);
+        RegisterDLCTFC_orig = (tRegisterDLCTFC*)Init.InstallHook("SFXAdditionalContent::RegisterDLCTFC", RegisterDLCTFC_target, RegisterDLCTFC_hook);
+        CHECK_RESOLVED(RegisterDLCTFC_orig);
+#endif
+
         LEASI_INFO("hooks initialized");
     }
 
