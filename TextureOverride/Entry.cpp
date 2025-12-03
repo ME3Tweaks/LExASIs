@@ -113,50 +113,30 @@ namespace TextureOverride
     void InitializeHooks(::LESDK::Initializer& Init)
     {
 #if defined(SDK_TARGET_LE2) || defined(SDK_TARGET_LE3)
-        // Find TFC registration function.
-        //auto const RegisterTFC_target = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
-        //CHECK_RESOLVED(RegisterTFC_target);
-        //RegisterTFC_orig = (tRegisterTFC*)Init.InstallHook("RegisterTFC", RegisterTFC_target, RegisterTFC_hook);
-        //CHECK_RESOLVED(RegisterTFC_orig);
-
+        // GFileManager so we can use InternalFindFiles
         GFileManager = Init.ResolveTyped<void*>(GFILEMANAGER_RVA);
         CHECK_RESOLVED(GFileManager);
-
-
 
         // InternalFindFiles
         InternalFindFiles = Init.ResolveTyped<tInternalFindFiles>(INTERNAL_FIND_FILES_RVA);
         CHECK_RESOLVED(InternalFindFiles);
-        //auto const InternalFindFiles_target = Init.ResolveTyped<tInternalFindFiles>(INTERNAL_FIND_FILES_RVA);
-        //CHECK_RESOLVED(InternalFindFiles_target);
-        //InternalFindFiles_orig = (tInternalFindFiles*)Init.InstallHook("InternalFindFiles", InternalFindFiles_target, InternalFindFiles_hook);
-        //CHECK_RESOLVED(InternalFindFiles_orig);
 
-        RegisterTFC_orig = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
-        CHECK_RESOLVED(RegisterTFC_orig);
-
-        // Find t2d creation
-        //auto const CreateT2DResource_target = Init.ResolveTyped<tCreateT2DResource>(FTEXTURE2DRESOURCE_RVA);
-        //CHECK_RESOLVED(CreateT2DResource_target);
-        //CreateT2DResource_orig = (tCreateT2DResource*)Init.InstallHook("CreateT2DResource", CreateT2DResource_target, CreateT2DResource_hook);
-        //CHECK_RESOLVED(CreateT2DResource_orig);
-
-        // Find package file lookup
-        //auto const FindPackageFile_target = Init.ResolveTyped<tFindPackageFile>(FINDPACKAGEFILE_RVA);
-        //CHECK_RESOLVED(FindPackageFile_target);
-        //FindPackageFile_orig = (tFindPackageFile*)Init.InstallHook("FindPackageFile", FindPackageFile_target, FindPackageFile_hook);
-        //CHECK_RESOLVED(FindPackageFile_orig);
+        // TFC registration
+        RegisterTFC = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
+        CHECK_RESOLVED(RegisterTFC);
 #endif
 
         // Find oodle decompression function.
         OodleDecompress = Init.ResolveTyped<t_OodleDecompress>(OODLE_DECOMPRESS_RVA);
         CHECK_RESOLVED(OodleDecompress);
 
+        // For replacing mip data
         auto const UTexture2D_Serialize_target = Init.ResolveTyped<t_UTexture2D_Serialize>(UTEXTURE2D_SERIALIZE_RVA);
         CHECK_RESOLVED(UTexture2D_Serialize_target);
         UTexture2D_Serialize_orig = (t_UTexture2D_Serialize*)Init.InstallHook("UTexture2D::Serialize", UTexture2D_Serialize_target, UTexture2D_Serialize_hook);
         CHECK_RESOLVED(UTexture2D_Serialize_orig);
 
+        // For console commands
         auto const UGameEngine_Exec_target = Init.ResolveTyped<t_UGameEngine_Exec>(UGAMEENGINE_EXEC_RVA);
         CHECK_RESOLVED(UGameEngine_Exec_target);
         UGameEngine_Exec_orig = (t_UGameEngine_Exec*)Init.InstallHook("UGameEngine::Exec", UGameEngine_Exec_target, UGameEngine_Exec_hook);

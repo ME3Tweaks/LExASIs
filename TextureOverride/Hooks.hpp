@@ -22,8 +22,6 @@ namespace TextureOverride
     #define REGISTER_TFC_RVA            ::LESDK::Address::FromOffset(0x390d30)
     #define INTERNAL_FIND_FILES_RVA      ::LESDK::Address::FromOffset(0xa4bcc0)
     #define GFILEMANAGER_RVA             ::LESDK::Address::FromOffset(0x16823c0)
-    #define FINDPACKAGEFILE_RVA		::LESDK::Address::FromOffset(0xaee720)
-    #define FTEXTURE2DRESOURCE_RVA ::LESDK::Address::FromOffset(0x38fc50)
 #elif defined(SDK_TARGET_LE3)
     #define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x541920)
     #define UTEXTURE2D_SERIALIZE_RVA    ::LESDK::Address::FromOffset(0x3C1FB0)
@@ -55,7 +53,7 @@ namespace TextureOverride
     extern t_OodleDecompress* OodleDecompress;
 
 
-    // ! LE2/LE3 - FindPackageFile
+    // ! LE2/LE3 - Earlier TFC registration / LE3 Multi TFC
 	// ========================================
 #if defined(SDK_TARGET_LE2) || defined(SDK_TARGET_LE3)
     /// <summary>
@@ -70,18 +68,7 @@ namespace TextureOverride
 
     // TFC Registration
     using tRegisterTFC = void(FString* Name);
-    extern tRegisterTFC* RegisterTFC_orig;
-	void RegisterTFC_hook(FString* Name);
-
-    // Research
-    using tCreateT2DResource = void*(void* resource, UTexture2D* owner, int initalMipCount, FString* inF1, FString inF2);
-	extern tCreateT2DResource* CreateT2DResource_orig;
-	void* CreateT2DResource_hook(void* resource, UTexture2D* owner, int initalMipCount, FString* inF1, FString inF2);
-
-    // Research
-	using tFindPackageFile = bool(void* self, wchar_t* packageName, FGuid* guid, FString* outFilename, wchar_t* language);
-	extern tFindPackageFile* FindPackageFile_orig;
-	bool FindPackageFile_hook(void* self, wchar_t* packageName, FGuid* guid, FString* outFilename, wchar_t* language);
+    extern tRegisterTFC* RegisterTFC;
 
     /// <summary>
     /// Function to register TFCs in DLC folders
@@ -93,6 +80,5 @@ namespace TextureOverride
     extern tInternalFindFiles* InternalFindFiles_orig;
     void InternalFindFiles_hook(void* self, TArray<FString>* result, const wchar_t* searchPattern, bool files, bool folders, unsigned int param_6);
     extern tInternalFindFiles* InternalFindFiles;
-
 #endif
 }

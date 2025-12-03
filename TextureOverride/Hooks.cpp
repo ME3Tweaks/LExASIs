@@ -90,38 +90,13 @@ namespace TextureOverride
 	t_OodleDecompress* OodleDecompress = nullptr;
 
 #if defined(SDK_TARGET_LE2) || defined(SDK_TARGET_LE3)
-	tRegisterTFC* RegisterTFC_orig = nullptr;
-	void RegisterTFC_hook(FString* path)
-	{
-		// LEASI_TRACE(L"RegisterTFC: {}", path->Chars());
-		RegisterTFC_orig(path);
-	}
-
-	tCreateT2DResource* CreateT2DResource_orig = nullptr;
-	void* CreateT2DResource_hook(void* resource, UTexture2D* owner, int initalMipCount, FString* inF1, FString inF2) {
-		if (inF1 != nullptr) {
-			LEASI_TRACE(L"  {} Archive: {}", owner->GetFullName().Chars(), inF1->Chars());
-		}
-		auto res = CreateT2DResource_orig(resource, owner, initalMipCount, inF1, inF2);
-		return res;
-	}
-
-	tFindPackageFile* FindPackageFile_orig = nullptr;
-	bool FindPackageFile_hook(void* self, wchar_t* packageName, FGuid* guid, FString* outFilename, wchar_t* language) {
-		LEASI_TRACE(L"FindPackageFile: {}", packageName);
-		bool result = FindPackageFile_orig(self, packageName, guid, outFilename, language);
-		if (result) {
-			LEASI_TRACE(L"FindPackageFile: {} -> {}", packageName, outFilename->Chars());
-		}
-		else {
-			LEASI_TRACE(L"FindPackageFile: {} -> [NOT FOUND]", packageName);
-		}
-		return result;
-	}
+	tRegisterTFC* RegisterTFC = nullptr;
 
 	tInternalFindFiles* InternalFindFiles_orig = nullptr;
 	tInternalFindFiles* InternalFindFiles = nullptr;
 	void InternalFindFiles_hook(void* self, TArray<FString>* result, const wchar_t* searchPath, bool findFiles, bool findFolders, unsigned int flags) {
+
+	// Left here in case you ever need to turn it on to inspect things.
 #if _DEBUG && FALSE
 		if (findFiles && findFolders) 
 			LEASI_INFO(L"InternalFindFiles [FILES AND FOLDERS] {}: {}", flags, searchPath);
@@ -137,6 +112,7 @@ namespace TextureOverride
 		}
 #endif
 		InternalFindFiles_orig(self, result, searchPath, findFiles, findFolders, flags);
+	// Left here if you ever need to find things later.
 #if _DEBUG && FALSE
 		if (findFolders) {
 			for (auto& entry : *result) {
@@ -174,8 +150,7 @@ namespace TextureOverride
 					auto fullTfcPath = dlcCookedPath / tfcFiles.GetData()[k].Chars();
 					LEASI_INFO(L"Registering DLC mod TFC: {}", fullTfcPath.c_str());
 					FString tfcPath(fullTfcPath.c_str());
-					RegisterTFC_orig(&tfcPath);
-					LEASI_UNUSED(tfcPath);
+					RegisterTFC(&tfcPath);
 				}
 			}
 		}
