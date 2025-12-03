@@ -103,12 +103,13 @@ namespace TextureOverride
         std::uint32_t   TextureCount;           // Number of @ref CTextureEntry structs after this header.
         std::uint32_t   TfcRefCount;            // Number of @ref CTfcRefEntry structs at @ref TfcRefOffset.
         std::uint64_t   TfcRefOffset;           // Offset to the @ ref CTfcRefEntry structs.
-        unsigned char   Reserved[4];
+        std::uint32_t   MetadataCRC;            // Unused by this ASI - used to ensure match to .btm
+        unsigned char   Reserved[16];           // Reserved for future use
 
         static constexpr decltype(Magic)        k_checkMagic{ 'L', 'E', 'T', 'E', 'X', 'M' };
         static constexpr decltype(Version)      k_lastVersion{ 2 };
     };
-    static_assert(sizeof(CManifestHeader) == 32);
+    static_assert(sizeof(CManifestHeader) == 48);
 
     struct CGuid
     {

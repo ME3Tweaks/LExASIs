@@ -18,14 +18,20 @@ namespace TextureOverride
     #define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x5383C0)
     #define UTEXTURE2D_SERIALIZE_RVA    ::LESDK::Address::FromOffset(0x39ec80)
     #define OODLE_DECOMPRESS_RVA        ::LESDK::Address::FromOffset(0x103ac0)
+    // Support for pre-dlc mount streaming textures
+    #define REGISTER_TFC_RVA            ::LESDK::Address::FromOffset(0x390d30)
+    #define INTERNAL_FIND_FILES_RVA      ::LESDK::Address::FromOffset(0xa4bcc0)
+    #define GFILEMANAGER_RVA             ::LESDK::Address::FromOffset(0x16823c0)
+    #define FINDPACKAGEFILE_RVA		::LESDK::Address::FromOffset(0xaee720)
+    #define FTEXTURE2DRESOURCE_RVA ::LESDK::Address::FromOffset(0x38fc50)
 #elif defined(SDK_TARGET_LE3)
     #define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x541920)
     #define UTEXTURE2D_SERIALIZE_RVA    ::LESDK::Address::FromOffset(0x3C1FB0)
     #define OODLE_DECOMPRESS_RVA        ::LESDK::Address::FromOffset(0x11fd10)
-    // MultiTFC:
+    // Support for pre-dlc mount streaming textures and multi tfc
     #define REGISTER_TFC_RVA            ::LESDK::Address::FromOffset(0x3B8470)
-    #define GET_DLC_NAME_RVA            ::LESDK::Address::FromOffset(0xaf75f0)
-    #define REGISTER_DLC_TFC_RVA        ::LESDK::Address::FromOffset(0xaf6e20)
+    #define INTERNAL_FIND_FILES_RVA      ::LESDK::Address::FromOffset(0xa45ad0)
+    #define GFILEMANAGER_RVA             ::LESDK::Address::FromOffset(0x17cd5d0)
 #endif
 
     // ! UGameEngine::Exec
@@ -48,47 +54,45 @@ namespace TextureOverride
     using t_OodleDecompress = void* (unsigned int decompressionFlags, void* outPtr, int uncompressedSize, void* inPtr, int compressedSize);
     extern t_OodleDecompress* OodleDecompress;
 
-    // ! LE3 - MultiTFC
-    // ========================================
-#if defined(SDK_TARGET_LE3)
 
-#pragma pack(push, 4)
-    // Contains information about a DLC module - TFC, TOC, config, etc
-    struct SFXAdditionalContent
-    {
-        unsigned char           Unknown1[0x64];
-        FString                 RelativeDLCPath;        // 0x64
-        TArray<BYTE>            PCConsoleTOC;           // 0x74
-        TArray<BYTE>            ConfigFile;             // 0x84
-        unsigned char           Unknown2[0x1C];         // 0x94
-        FGuid                   TFCGuid;                // 0xB0 [0xB4] - Textures_DLC_....tfc
-        int                     UnknownInt3;
-        int                     Flags;                  // 0xC4 [0xC8] - Seems to indicate state of various things on DLC
-        int                     UnknownInt4;
-        int                     UnknownInt5;
-        void*                   PointerToGameContent;   // 0xD0 [0xD4]
-    };
-#pragma pack(pop)
-
-    static_assert(offsetof(SFXAdditionalContent, RelativeDLCPath) == 0x64);
-    static_assert(offsetof(SFXAdditionalContent, PCConsoleTOC) == 0x74);
-    static_assert(offsetof(SFXAdditionalContent, ConfigFile) == 0x84);
-    static_assert(offsetof(SFXAdditionalContent, Unknown2) == 0x94);
-    static_assert(offsetof(SFXAdditionalContent, TFCGuid) == 0xB0);
-    static_assert(offsetof(SFXAdditionalContent, Flags) == 0xC4);
-    static_assert(offsetof(SFXAdditionalContent, PointerToGameContent) == 0xD0);
-
-    // Utility method for getting DLC name from SFXAdditionalContent
-    using tGetDLCName = wchar_t* (SFXAdditionalContent* Content, FString* OutDlcName);
-    extern tGetDLCName* GetDLCName;
+    // ! LE2/LE3 - FindPackageFile
+	// ========================================
+#if defined(SDK_TARGET_LE2) || defined(SDK_TARGET_LE3)
+    /// <summary>
+    /// Flag to indicate that we have performed DLC registration already.
+    /// </summary>
+    extern bool bHasPerformedDLCTFCRegistration;
+    
+    /// <summary>
+    /// Pointer to the file manager
+    /// </summary>
+    extern void** GFileManager;
 
     // TFC Registration
-    using tRegisterTFC = void (FString* Name);
-    extern tRegisterTFC* RegisterTFC;
+    using tRegisterTFC = void(FString* Name);
+    extern tRegisterTFC* RegisterTFC_orig;
+	void RegisterTFC_hook(FString* Name);
 
-    // DLC TFC Registration Hook
-    using tRegisterDLCTFC = unsigned long long (SFXAdditionalContent* Content);
-    extern tRegisterDLCTFC* RegisterDLCTFC_orig;
-    unsigned long long RegisterDLCTFC_hook(SFXAdditionalContent* Content);
+    // Research
+    using tCreateT2DResource = void*(void* resource, UTexture2D* owner, int initalMipCount, FString* inF1, FString inF2);
+	extern tCreateT2DResource* CreateT2DResource_orig;
+	void* CreateT2DResource_hook(void* resource, UTexture2D* owner, int initalMipCount, FString* inF1, FString inF2);
+
+    // Research
+	using tFindPackageFile = bool(void* self, wchar_t* packageName, FGuid* guid, FString* outFilename, wchar_t* language);
+	extern tFindPackageFile* FindPackageFile_orig;
+	bool FindPackageFile_hook(void* self, wchar_t* packageName, FGuid* guid, FString* outFilename, wchar_t* language);
+
+    /// <summary>
+    /// Function to register TFCs in DLC folders
+    /// </summary>
+    void RegisterDLCTFCs();
+
+    // InternalFindFiles
+    using tInternalFindFiles = void(void* self, TArray<FString>* result, const wchar_t* searchPattern, bool files, bool folders, unsigned int param_6);
+    extern tInternalFindFiles* InternalFindFiles_orig;
+    void InternalFindFiles_hook(void* self, TArray<FString>* result, const wchar_t* searchPattern, bool files, bool folders, unsigned int param_6);
+    extern tInternalFindFiles* InternalFindFiles;
+
 #endif
 }

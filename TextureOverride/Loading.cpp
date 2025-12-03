@@ -71,6 +71,7 @@ namespace TextureOverride
 
         // Sort manifests into descending mount priority order.
         std::sort(g_loadedManifests.begin(), g_loadedManifests.end(), ManifestLoader::CompareReverse);
+        LEASI_INFO(L"manifests loaded");
     }
 
     FString const& GetTextureFullName(UTexture2D* const InObject)
@@ -247,7 +248,7 @@ namespace TextureOverride
         // Update InternalFormatLODBias to allow higher than LOD level mips to show without
         // package edits.
         InTexture->InternalFormatLODBias = Entry.InternalFormatLODBias;
-    
+
         // Update NeverStream based on incoming texture entry.
         // Validation of this will come from our editor tools, don't make it our
         // job to handle it.
