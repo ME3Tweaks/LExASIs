@@ -14,6 +14,8 @@ namespace TextureOverride
 {
     bool g_enableLoadingManifest{ true };
     std::vector<ManifestLoaderPointer> g_loadedManifests{};
+	int g_remainingAllowedStalls{ 25 }; // 5 seconds maximum stall time at 200ms per delay
+	bool g_manifestsFinishedLoading{ false }; // Used to stall for texture loading
 
     int32_t g_statTextureSerializeCount{ 0 };
     float g_statTextureSerializeSeconds{ 0.f };
@@ -71,6 +73,7 @@ namespace TextureOverride
 
         // Sort manifests into descending mount priority order.
         std::sort(g_loadedManifests.begin(), g_loadedManifests.end(), ManifestLoader::CompareReverse);
+        g_manifestsFinishedLoading = true;
         LEASI_INFO(L"manifests loaded");
     }
 

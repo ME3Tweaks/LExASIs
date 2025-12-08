@@ -1,8 +1,8 @@
+#include <thread>
+#include <chrono>
 #include "TextureOverride/Hooks.hpp"
 #include "TextureOverride/Loading.hpp"
-
 namespace fs = std::filesystem;
-
 
 namespace TextureOverride
 {
@@ -44,6 +44,20 @@ namespace TextureOverride
 	t_UTexture2D_Serialize* UTexture2D_Serialize_orig = nullptr;
 	void UTexture2D_Serialize_hook(UTexture2D* const Context, void* const Archive)
 	{
+		while (!g_manifestsFinishedLoading && g_remainingAllowedStalls >= 0) {
+			if (g_remainingAllowedStalls == 0) {
+				LEASI_WARN(L"UTexture2D::Serialize: Gave up waiting for manifests to finish loading");
+				// Prevent this loop from being able to be accessed again
+				g_remainingAllowedStalls = -1;
+				g_manifestsFinishedLoading = true;
+				break;
+			}
+
+			LEASI_DEBUG(L"UTexture2D::Serialize: waiting for manifests to finish loading... ({} stalls remaining)", g_remainingAllowedStalls);
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+			g_remainingAllowedStalls--;
+		}
+
 		FString const& TextureFullName = GetTextureFullName(Context);
 		// LEASI_DEBUG(L"UTexture2D::Serialize: {}", *TextureFullName);
 
@@ -141,7 +155,14 @@ namespace TextureOverride
 			auto dlcCookedPath = dlcPath / dlcName.Chars() / L"CookedPCConsole";
 			if (std::filesystem::exists(dlcCookedPath)) {
 				// Find *.tfc files in the cookedpcconsole folder
+#if defined(SDK_TARGET_LE3)
+				// LE3 DLC requires Textures_DLC_MOD_XXX so we keep that same requirement here as a prefix
+				std::wstring tfcName = std::format(L"Textures_{}*.tfc", dlcName.Chars());
+				auto tfcSearchPattern = dlcCookedPath / tfcName;
+#else
+				// LE2 DLC can be named anything
 				auto tfcSearchPattern = dlcCookedPath / L"*.tfc";
+#endif
 				LEASI_TRACE(L"Searching in {}", dlcCookedPath.c_str());
 				TArray<FString> tfcFiles{};
 				InternalFindFiles(*GFileManager, &tfcFiles, tfcSearchPattern.c_str(), true, false, 2);

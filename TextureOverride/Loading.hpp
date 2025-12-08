@@ -68,6 +68,9 @@ namespace TextureOverride
     // Manifest accessors in inverse mount order.
     extern std::vector<ManifestLoaderPointer> g_loadedManifests;
 
+    extern bool g_manifestsFinishedLoading;
+    extern int g_remainingAllowedStalls;
+
     extern int32_t g_statTextureSerializeCount;
     extern float g_statTextureSerializeSeconds;
 
