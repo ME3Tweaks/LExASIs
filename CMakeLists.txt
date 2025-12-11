@@ -28,7 +28,7 @@ option (LEASI_BUILD_LE1 "Build LE1 targets?" ON)
 option (LEASI_BUILD_LE2 "Build LE2 targets?" ON)
 option (LEASI_BUILD_LE3 "Build LE3 targets?" ON)
 
-if (CMAKE_GENERATOR MATCHES "Visual Studio 17 2022")
+if (CMAKE_GENERATOR MATCHES "Visual Studio 17 2022" OR CMAKE_GENERATOR MATCHES "Visual Studio 18 2026")
   set (LEASI_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/Build/$<CONFIG>)
   message ("-- Detected supported generator: ${CMAKE_GENERATOR}")
   message ("-- Configured output path: ${LEASI_OUTPUT_DIRECTORY}")

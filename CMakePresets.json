@@ -19,7 +19,7 @@
             "inherits": "Config-Base",
             "displayName": "Win64 / Visual Studio",
             "description": "Visual Studio targeting Windows x86-64",
-            "generator": "Visual Studio 17 2022",
+            "generator": "Visual Studio 18 2026",
             "architecture": {
                 "value": "x64",
                 "strategy": "external"
