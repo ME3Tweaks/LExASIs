@@ -216,6 +216,7 @@ add_subdirectory ("Common")
 add_subdirectory ("ConvoSniffer")
 add_subdirectory ("SSRUnlocker")
 add_subdirectory ("TextureOverride")
+add_subdirectory ("StreamingLevelsHUD")
 
 # set_property (DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "TextureOverride-LE3")
 
