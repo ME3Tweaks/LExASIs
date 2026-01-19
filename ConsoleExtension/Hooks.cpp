@@ -2,6 +2,7 @@
 #include <string>
 #include "Hooks.hpp"
 #include "Common/Objects.hpp"
+#include "Common/Utils.hpp"
 
 namespace ConsoleExtension
 {
@@ -56,7 +57,7 @@ namespace ConsoleExtension
 	{
 		if (player)
 		{
-			player->CauseEvent(eventName);
+			Common::CauseRemoteEvent(player, eventName);
 		}
 	}
 
@@ -112,7 +113,7 @@ namespace ConsoleExtension
 			{
 				if (const auto player = ::Common::FindFirstObject<ABioPlayerController>())
 				{
-					SFXName eventName{ token, 0 };
+					SFXName eventName{ token, 0, true };
 					CauseRemoteEvent(player, eventName);
 					return TRUE;
 				}
@@ -128,7 +129,7 @@ namespace ConsoleExtension
 			{
 				if (const auto cheatMan = ::Common::FindFirstObject<UBioCheatManager>())
 				{
-					SFXName levelName{ token, 0 };
+					SFXName levelName{ token, 0, true };
 					cheatMan->StreamLevelIn(levelName);
 					return TRUE;
 				}
@@ -142,7 +143,7 @@ namespace ConsoleExtension
 			{
 				if (const auto cheatMan = ::Common::FindFirstObject<UBioCheatManager>())
 				{
-					SFXName levelName{ token, 0 };
+					SFXName levelName{ token, 0, true };
 					cheatMan->StreamLevelOut(levelName);
 					return TRUE;
 				}
@@ -156,7 +157,7 @@ namespace ConsoleExtension
 			{
 				if (const auto cheatMan = ::Common::FindFirstObject<UBioCheatManager>())
 				{
-					SFXName levelName{ token, 0 };
+					SFXName levelName{ token, 0, true };
 					cheatMan->OnlyLoadLevel(levelName);
 					return TRUE;
 				}

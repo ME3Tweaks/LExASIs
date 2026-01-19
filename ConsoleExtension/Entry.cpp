@@ -10,13 +10,6 @@ SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"ConsoleExtension", L"SirCxyrtyx", L"2
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
-
-#ifdef SDK_TARGET_LE3
-	// Pattern for StaticConstructObject in LE3
-	#define PATTERN_STATICCONSTRUCTOBJECT_LE3 ::LESDK::Address::FromPostHook(/* 48 8b c4 48 89 */ "50 10 56 57 41 55 41 56 41 57 48 83 ec 70 48 c7 40 b8 fe ff ff ff")
-#endif
-
-
 SPI_IMPLEMENT_ATTACH
 {
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "ConsoleExtension" };
@@ -65,7 +58,7 @@ namespace ConsoleExtension
 #ifdef SDK_TARGET_LE3
 		// StaticConstructObject for LE3
 		// ----------------------------------------
-		StaticConstructObject = Init.ResolveTyped<t_StaticConstructObject>(PATTERN_STATICCONSTRUCTOBJECT_LE3);
+		StaticConstructObject = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_PHOOK);
 		CHECK_RESOLVED(StaticConstructObject);
 #endif
 

@@ -94,6 +94,11 @@ namespace Details
         LEASI_TRACE("resolved " #variable " => {}", (void*)variable);               \
     } while (false)
 
+#define LEASI_HOOKDEF(Name, ReturnType, ...)    \
+    using t_##Name = ReturnType(__VA_ARGS__); \
+    extern t_##Name* Name##_orig; \
+    ReturnType Name##_hook(__VA_ARGS__);
+
 // ! Miscellaneous types.
 // ========================================
 

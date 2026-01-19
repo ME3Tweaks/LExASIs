@@ -10,6 +10,9 @@ asi_target (Common
     "Objects.hpp"
     "ME3TweaksLogger.cpp"
     "ME3TweaksLogger.hpp"
+    "Utils.cpp"
+    "Utils.hpp"
+    "json.hpp"
   LINKS
     "spdlog"
   VLINKS

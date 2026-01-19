@@ -6,6 +6,11 @@
 
 namespace Common
 {
+    inline bool IsDefaultObject(UObject* obj)
+    {
+        static constexpr QWORD RF_ClassDefaultObject = 0x200;
+        return (obj->ObjectFlags & RF_ClassDefaultObject) != 0;
+    }
 
     /// @brief      Unreal-style iterator filtering objects by a specific type.
     /// @tparam     T - A type derived from @c UObject of which all filtered objects must be.
@@ -18,7 +23,6 @@ namespace Common
 
         void SkipToNext()
         {
-            static constexpr QWORD RF_ClassDefaultObject = 0x200;
             UObject** const IterEnd = UObject::GObjObjects->GetData()
                 + UObject::GObjObjects->Count();
 
@@ -30,7 +34,7 @@ namespace Common
                     {
                         if constexpr (!bIncludeDefaults)
                         {
-                            if (((*Current)->ObjectFlags & RF_ClassDefaultObject) != 0)
+                            if (IsDefaultObject(*Current))
                                 continue;
                         }
 
@@ -46,7 +50,7 @@ namespace Common
                     {
                         if constexpr (!bIncludeDefaults)
                         {
-                            if (((*Current)->ObjectFlags & RF_ClassDefaultObject) != 0)
+                            if (IsDefaultObject(*Current))
                                 continue;
                         }
 
