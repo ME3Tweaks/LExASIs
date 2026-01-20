@@ -2,17 +2,16 @@
 #include "Common/Base.hpp"
 #include "FunctionLogger/Entry.hpp"
 #include "FunctionLogger/Hooks.hpp"
+#include "FunctionLogger/SharedVersion.h"
 
-constexpr auto loggerName = "FunctionLogger";
-
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"FunctionLogger", L"Mgamerz", L"4.1.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
 
 SPI_IMPLEMENT_ATTACH
 {
-	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "FunctionLogger" };
+	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 
 	// Initialize dedicated file logger for FunctionLog.log
 	auto outputType = Common::ME3TweaksLogger::LogOutput::OutputToFile;
@@ -22,7 +21,7 @@ SPI_IMPLEMENT_ATTACH
 	}
 	try
 	{
-		::FunctionLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, "FunctionLog.log");
+		::FunctionLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_A, outputType, ASI_NAME_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
@@ -45,7 +44,7 @@ SPI_IMPLEMENT_DETACH
 	{
 		::FunctionLogger::FileLogger->flush();
 		::FunctionLogger::FileLogger.reset();
-		spdlog::drop(loggerName);
+		spdlog::drop(ASI_NAME_A);
 	}
 
 	::LESDK::TerminateConsole();
