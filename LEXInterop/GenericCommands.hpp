@@ -169,7 +169,7 @@ namespace LEXInterop
                 auto saveLoadWidget = guiManager->eventGetSaveLoadWidget();
                 if (saveLoadWidget)
                 {
-					auto loadingStrRef = 170447; // "Loading..."
+					constexpr int loadingStrRef = 170447; // "Loading..."
                     saveLoadWidget->ShowLoadingMessage(TRUE, loadingStrRef);
                 }
             }

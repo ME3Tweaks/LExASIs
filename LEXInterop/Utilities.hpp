@@ -47,7 +47,7 @@ namespace LEXInterop
     }
 
     // Check if a string starts with a prefix
-    inline bool StartsWith(const char* prefix, const std::string& str)
+    inline bool StartsWith(const std::string& str, const char* prefix)
     {
         return str.rfind(prefix, 0) == 0;
     }

@@ -17,22 +17,22 @@ namespace LEXInterop
         static bool HandleCommand(std::string command)
         {
             // All AssetViewer commands start with ASSETV_
-            if (!StartsWith("ASSETV_", command))
+            if (!StartsWith(command, "ASSETV_"))
                 return false;
 
-            if (StartsWith("ASSETV_ALLOW_WINDOW_PAUSE", command))
+            if (StartsWith(command, "ASSETV_ALLOW_WINDOW_PAUSE"))
             {
                 SetAllowWindowPausing(true);
                 return true;
             }
 
-            if (StartsWith("ASSETV_DISALLOW_WINDOW_PAUSE", command))
+            if (StartsWith(command, "ASSETV_DISALLOW_WINDOW_PAUSE"))
             {
                 SetAllowWindowPausing(false);
                 return true;
             }
 
-            if (StartsWith("ASSETV_SPAWN_ASSET ", command))
+            if (StartsWith(command, "ASSETV_SPAWN_ASSET "))
             {
                 // Parse: ASSETV_SPAWN_ASSET <actorPath>
                 auto subCommand = GetCommandParam(command);
@@ -48,7 +48,7 @@ namespace LEXInterop
             }
 
 
-            if (StartsWith("ASSETV_CHANGE_PAWN ", command))
+            if (StartsWith(command, "ASSETV_CHANGE_PAWN "))
             {
                 // Test code.
                 auto subCommand = GetCommandParam(command);

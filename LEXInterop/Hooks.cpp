@@ -3,10 +3,10 @@
 #include "SharedData.hpp"
 #include "LEXCommunications.hpp"
 #include "PathfindingGPS.hpp"
-#include "LiveLevelEditor.hpp"
+#include "LiveLevelEditor/LiveLevelEditor.hpp"
 #include "AssetViewer.hpp"
 #include "FileLoader.hpp"
-#include "LiveLevelEditorActions.hpp"
+#include "LiveLevelEditor/LiveLevelEditorActions.hpp"
 
 namespace LEXInterop
 {

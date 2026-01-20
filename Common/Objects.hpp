@@ -11,6 +11,11 @@ namespace Common
         static constexpr QWORD RF_ClassDefaultObject = 0x200;
         return (obj->ObjectFlags & RF_ClassDefaultObject) != 0;
     }
+    inline bool IsDestroyed(UObject* obj)
+    {
+        static constexpr QWORD RF_FinishDestroyed = 0x0000000000010000;
+        return (obj->ObjectFlags & RF_FinishDestroyed) != 0;
+    }
 
     /// @brief      Unreal-style iterator filtering objects by a specific type.
     /// @tparam     T - A type derived from @c UObject of which all filtered objects must be.

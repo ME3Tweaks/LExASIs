@@ -4,7 +4,7 @@
 #include "FileLoader.hpp"
 #include "PathfindingGPS.hpp"
 #include "AssetViewer.hpp"
-#include "LiveLevelEditor.hpp"
+#include "LiveLevelEditor/LiveLevelEditor.hpp"
 #include "Common/Base.hpp"
 
 #include <Windows.h>

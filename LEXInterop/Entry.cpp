@@ -19,7 +19,7 @@ SPI_IMPLEMENT_ATTACH
     ::LEXInterop::InitializeGlobals(Init);
     ::LEXInterop::FileLoader::InitializePackagePrecacheMap(Init);
     ::LEXInterop::InitializeHooks(Init);
-	::LEXInterop::InitializeAdditionalFunctions(Init);
+    ::LEXInterop::InitializeAdditionalFunctions(Init);
     ::LEXInterop::StartPipeThread();
 
     LEASI_INFO("LEXInterop initialized");
@@ -51,7 +51,7 @@ namespace LEXInterop
         CHECK_RESOLVED(GSys);
         GWorld = Init.ResolveTyped<UWorld*>(BUILTIN_GWORLD_RIP);
         CHECK_RESOLVED(GWorld);
-        GError = Init.ResolveTyped<void*>(BUILTIN_GWORLD_RIP);
+        GError = Init.ResolveTyped<void*>(BUILTIN_GERROR_RIP);
         CHECK_RESOLVED(GError);
         LEASI_INFO("Globals initialized");
     }
@@ -82,7 +82,7 @@ namespace LEXInterop
         auto const SetLinker_target = Init.ResolveTyped<t_SetLinker>(::LESDK::Address::FromPostHook(setLinkerPattern));
         CHECK_RESOLVED(SetLinker_target);
         SetLinker_orig = reinterpret_cast<t_SetLinker*>(Init.InstallHook("SetLinker", SetLinker_target, SetLinker_hook));
-        CHECK_RESOLVED(SetLinker_target);
+        CHECK_RESOLVED(SetLinker_orig);
 
         LEASI_INFO("Hooks initialized");
     }

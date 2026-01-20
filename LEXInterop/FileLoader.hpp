@@ -187,8 +187,7 @@ namespace LEXInterop
             return false;
         }
 
-        // Find precached package data by name
-        // Returns nullptr if not found, otherwise returns the data and sets outSize
+        // Checks if package is in Precache map
         static bool FindPrecachedPackage(const wchar_t* packageName)
         {
             if (PackagePrecacheMap->Find(FString(packageName)))

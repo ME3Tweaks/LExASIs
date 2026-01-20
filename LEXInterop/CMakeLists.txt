@@ -16,8 +16,10 @@ asi_target (LEXInterop
     "LEXCommunications.hpp"
     "PathfindingGPS.hpp"
     "AssetViewer.hpp"
-    "LiveLevelEditor.hpp"
-    "LiveLevelEditorActions.hpp"
+    "LiveLevelEditor/LiveLevelEditor.cpp"
+    "LiveLevelEditor/LiveLevelEditor.hpp"
+    "LiveLevelEditor/LiveLevelEditorActions.cpp"
+    "LiveLevelEditor/LiveLevelEditorActions.hpp"
     "AdditionalFunctions.cpp"
     "AdditionalFunctions.hpp"
   VLINKS
