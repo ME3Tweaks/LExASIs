@@ -4,8 +4,9 @@
 #include "LEXInterop/Pipe.hpp"
 #include "LEXInterop/FileLoader.hpp"
 #include "LEXInterop/AdditionalFunctions.hpp"
+#include "LEXInterop/SharedVersion.h"
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"LEXInterop", L"ME3Tweaks", L"9.0.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -14,7 +15,7 @@ SPI_IMPLEMENT_ATTACH
 #ifdef DEBUG
     ::LESDK::InitializeConsole();
 #endif
-    ::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "LEXInterop" };
+    ::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 
     ::LEXInterop::InitializeGlobals(Init);
     ::LEXInterop::FileLoader::InitializePackagePrecacheMap(Init);

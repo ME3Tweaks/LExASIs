@@ -6,6 +6,8 @@ asi_target (StreamingLevelsHUD
     "Entry.hpp"
     "Hooks.cpp"
     "Hooks.hpp"
+    "SharedVersion.h"
+    "StreamingLevelsHUD.rc"
   VLINKS
     "Common"
     "LESDK"

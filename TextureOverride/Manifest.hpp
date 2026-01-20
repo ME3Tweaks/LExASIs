@@ -7,17 +7,6 @@
 #include "Common/Base.hpp"
 
 
-template<>
-struct std::hash<FString>
-{
-    std::size_t operator()(FString const& Key) const
-    {
-        // Reusing the TMap's hash implementation.
-        return static_cast<std::size_t>(GetTypeHash(Key));
-    }
-};
-
-
 namespace TextureOverride
 {
     // ! Enumerations.

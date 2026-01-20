@@ -2,17 +2,17 @@
 #include "Common/Base.hpp"
 #include "KismetLogger/Entry.hpp"
 #include "KismetLogger/Hooks.hpp"
+#include "KismetLogger/SharedVersion.h"
 
-constexpr auto loggerName = "KismetLogger";
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"KismetLogger", L"ME3Tweaks", L"3.1.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
 
 SPI_IMPLEMENT_ATTACH
 {
-	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "KismetLogger" };
+	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 
 	// Initialize console and file logger for KismetLog.txt
 	::LESDK::InitializeConsole();
@@ -22,11 +22,11 @@ SPI_IMPLEMENT_ATTACH
 	);
 	try
 	{
-		::KismetLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, "KismetLog.txt");
+		::KismetLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".txt");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
-		LEASI_ERROR("Failed to create KismetLog.txt: {}", ex.what());
+		LEASI_ERROR("Failed to create " ASI_NAME_NO_SPACE_A ".txt: {}", ex.what());
 		return false;
 	}
 
@@ -45,7 +45,7 @@ SPI_IMPLEMENT_DETACH
 	{
 		::KismetLogger::FileLogger->flush();
 		::KismetLogger::FileLogger.reset();
-		spdlog::drop(loggerName);
+		spdlog::drop(ASI_NAME_NO_SPACE_A);
 	}
 
 	::LESDK::TerminateConsole();

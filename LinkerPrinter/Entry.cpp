@@ -5,11 +5,12 @@
 #include "Common/Base.hpp"
 
 #include <spdlog/spdlog.h>
+#include "KismetLogger/SharedVersion.h"
 
 // ! SPI metadata
 // ========================================
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"LinkerPrinter", L"ME3Tweaks", L"4.1.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -45,12 +46,11 @@ namespace LinkerPrinter
 
 // ! SPI implementation
 // ========================================
-static constexpr auto loggerName = SDK_TARGET_NAME_A "LinkerPrinter";
 
 SPI_IMPLEMENT_ATTACH
 {
 
-	::LESDK::Initializer Init{ InterfacePtr, loggerName };
+	::LESDK::Initializer Init{ InterfacePtr, ASI_NAME_NO_SPACE_A };
 
 	::LESDK::InitializeConsole();
 	auto outputType = Common::ME3TweaksLogger::LogOutput(
@@ -59,11 +59,11 @@ SPI_IMPLEMENT_ATTACH
 	);
 	try
 	{
-		::LinkerPrinter::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, "LinkerPrinter.log");
+		::LinkerPrinter::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
-		LEASI_ERROR("Failed to create LinkerPrinter.log: {}", ex.what());
+		LEASI_ERROR("Failed to create " ASI_NAME_NO_SPACE_A ".log: {}", ex.what());
 		return false;
 	}
 
@@ -86,7 +86,7 @@ SPI_IMPLEMENT_DETACH
 	{
 		::LinkerPrinter::FileLogger->flush();
 		::LinkerPrinter::FileLogger.reset();
-		spdlog::drop(loggerName);
+		spdlog::drop(ASI_NAME_NO_SPACE_A);
 	}
 
 	::LESDK::TerminateConsole();

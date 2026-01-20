@@ -3,6 +3,8 @@ asi_target (SSRUnlocker
   GAMES "LE1"
   SOURCES
     "Entry.cpp"
+    "SharedVersion.h"
+    "SSRUnlocker.rc"
   VLINKS
     "Common"
   )

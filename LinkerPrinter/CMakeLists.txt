@@ -6,6 +6,8 @@ asi_target (LinkerPrinter
     "Entry.hpp"
     "Hooks.cpp"
     "Hooks.hpp"
+    "SharedVersion.h"
+    "LinkerPrinter.rc"
   VLINKS
     "Common"
     "LESDK"

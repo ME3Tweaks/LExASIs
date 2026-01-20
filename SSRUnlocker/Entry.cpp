@@ -1,16 +1,20 @@
 #include <LESDK/Common/Common.hpp>
 #include <LESDK/Init.hpp>
+#include <LESDK/Headers.hpp>
+
 #include <SPI.h>
-
 #include "Common/Base.hpp"
+#include "SSRUnlocker/SharedVersion.h"
 
+#define GAME_NAME_WITH_ASI_A SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A
+#define GAME_NAME_WITH_ASI_W SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W
 
 #ifndef SDK_TARGET_LE1
     // This targets the only game with environment reflection probes.
     #error SSRUnlocker target only supports LE1 at the moment.
 #endif
 
-SPI_PLUGINSIDE_SUPPORT(L"LE1SSRUnlocker", L"d00telemental", L"0.2.0", SPI_GAME_LE1, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -19,7 +23,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 // ========================================
 
 #ifdef _DEBUG
-    #define writeln(frmt, ...)   fwprintf_s(stdout, L"LE1SSRUnlocker - " frmt "\n", __VA_ARGS__);
+    #define writeln(frmt, ...)   fwprintf_s(stdout, GAME_NAME_WITH_ASI_W L" - " frmt "\n", __VA_ARGS__);
 #else
     #define writeln(frmt, ...)
 #endif
@@ -48,7 +52,7 @@ SPI_IMPLEMENT_ATTACH
     LESDK::InitializeConsole();
 #endif
 
-    LESDK::Initializer Context(InterfacePtr, "LE1SSRUnlocker");
+    LESDK::Initializer Context(InterfacePtr, GAME_NAME_WITH_ASI_A);
     // writeln(L"Attach - hello from LE1GPUCrusher v2!");
 
     auto* const ReflectionUpdateRequired = Context.Resolve(REFLECTIONUPDATEREQUIRED_PAT);

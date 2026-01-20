@@ -6,6 +6,8 @@ asi_target (FunctionLogger
     "Entry.hpp"
     "Hooks.cpp"
     "Hooks.hpp"
+    "SharedVersion.h"
+    "FunctionLogger.rc"
   VLINKS
     "Common"
     "LESDK"
