@@ -6,6 +6,8 @@ asi_target (ConsoleExtension
     "Entry.hpp"
     "Hooks.cpp"
     "Hooks.hpp"
+    "SharedVersion.h"
+    "ConsoleExtension.rc"
   VLINKS
     "Common"
     "LESDK"
