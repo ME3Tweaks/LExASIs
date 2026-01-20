@@ -12,6 +12,8 @@ asi_target (TextureOverride
     "Manifest.hpp"
     "Mount.cpp"
     "Mount.hpp"
+    "SharedVersion.h"
+    "TextureOverride.rc"
   VLINKS
     "Common"
     "LESDK"
