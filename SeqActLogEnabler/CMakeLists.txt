@@ -8,6 +8,8 @@ asi_target (SeqActLogEnabler
     "Hooks.hpp"
     "ScreenLogger.cpp"
     "ScreenLogger.hpp"
+    "SharedVersion.h"
+    "SeqActLogEnabler.rc"
   VLINKS
     "Common"
     "LESDK"

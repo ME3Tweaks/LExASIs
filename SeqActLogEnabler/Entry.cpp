@@ -2,17 +2,18 @@
 #include "Common/Base.hpp"
 #include "SeqActLogEnabler/Entry.hpp"
 #include "SeqActLogEnabler/Hooks.hpp"
+#include "SeqActLogEnabler/SharedVersion.h"
 
 constexpr auto loggerName = "SeqActLogEnabler";
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"SeqActLogEnabler", L"ME3Tweaks", L"5.0.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
 
 SPI_IMPLEMENT_ATTACH
 {
-	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "SeqActLogEnabler" };
+	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 	// Initialize console and file logger
 	::LESDK::InitializeConsole();
 

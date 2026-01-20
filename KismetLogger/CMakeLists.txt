@@ -6,6 +6,8 @@ asi_target (KismetLogger
     "Entry.hpp"
     "Hooks.cpp"
     "Hooks.hpp"
+    "SharedVersion.h"
+    "KismetLogger.rc"
   VLINKS
     "Common"
     "LESDK"

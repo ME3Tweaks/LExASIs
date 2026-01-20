@@ -20,6 +20,8 @@ asi_target (LEXInterop
     "LiveLevelEditorActions.hpp"
     "AdditionalFunctions.cpp"
     "AdditionalFunctions.hpp"
+    "SharedVersion.h"
+    "LEXInterop.rc"
   VLINKS
     "Common"
     "LESDK"

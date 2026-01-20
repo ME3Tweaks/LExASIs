@@ -5,15 +5,16 @@
 #include "Common/Base.hpp"
 #include "StreamingLevelsHUD/Entry.hpp"
 #include "StreamingLevelsHUD/Hooks.hpp"
+#include "StreamingLevelsHUD/SharedVersion.h"
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W L"StreamingLevelsHUD", L"ME3Tweaks", L"0.1.0", SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
 
 SPI_IMPLEMENT_ATTACH
 {
-	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A "StreamingLevelsHUD" };
+	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 
 	::StreamingLevelsHUD::InitializeGlobals(Init);
 	::StreamingLevelsHUD::InitializeHooks(Init);
