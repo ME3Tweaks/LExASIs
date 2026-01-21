@@ -112,7 +112,7 @@ namespace LEXInterop
                 else
                 {
                     const auto tag = actor->Tag.ToString();
-                    if (tag.Length() > 0 && tag.Equals(actor->Class->GetName(), true))
+                    if (tag.Length() > 0 && !tag.Equals(actor->Class->GetName(), true))
                     {
                         // Tag != ClassName
                         actorJson["Tag"] = tag.Chars();
