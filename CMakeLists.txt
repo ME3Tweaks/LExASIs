@@ -226,6 +226,7 @@ add_subdirectory ("LEXInterop")
 add_subdirectory ("Autoload")
 add_subdirectory ("HotReload")
 add_subdirectory ("PNGScreenshots")
+add_subdirectory ("2DAPrinter")
 
 
 # set_property (DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "TextureOverride-LE3")
