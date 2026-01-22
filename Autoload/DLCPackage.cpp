@@ -10,10 +10,16 @@ ExtraContent* DLCPackage::GExtraContent = nullptr;
 std::vector<DLCPackage> DLCPackage::dlcsToMount{};
 
 void DLCPackage::ScanForDLCContent() {
-	LEASI_INFO(L"Finding DLC content in {}...", k_searchFoldersRoot);
 	std::filesystem::path const dlcDirectory{ k_searchFoldersRoot };
 
-	// Print full resolved path here
+	if (!std::filesystem::exists(dlcDirectory))
+	{
+		LEASI_INFO(L"DLC directory does not exist, skipping DLC content scan");
+		DLCPackage::bContentScanComplete = true;
+		return;
+	}
+
+	LEASI_INFO(L"Performing DLC content scan");
 
 	FString MountLoadError{};
 	for (std::filesystem::directory_entry const& gameDLCDir : std::filesystem::directory_iterator{ dlcDirectory })
@@ -21,9 +27,14 @@ void DLCPackage::ScanForDLCContent() {
 		std::filesystem::path const& currDLCPath = gameDLCDir.path();
 		std::wstring const dlcName{ currDLCPath.filename().c_str() };
 
-		if (!gameDLCDir.is_directory() || !dlcName.starts_with(L"DLC_MOD_"))
+		if (!gameDLCDir.is_directory()) {
+			// File
+			continue;
+		}
+
+		if (!dlcName.starts_with(L"DLC_MOD_"))
 		{
-			LEASI_TRACE(L"Skipping {}, not a supported DLC directory", currDLCPath.c_str());
+			LEASI_INFO(L"Skipping {}, not a DLC mod directory", currDLCPath.c_str());
 			continue;
 		}
 
@@ -81,14 +92,14 @@ bool DLCPackage::ParseDLC(FString& outError)
 		if (extension == L".tfc") {
 			// Found TFC
 			auto tfcPath = entry.path().c_str();
-			LEASI_INFO(L"\t\tFound TFC: %s", tfcPath);
+			LEASI_INFO(L"\t\tFound TFC: {}", tfcPath);
 			DLCTFCsToRegister.push_back(tfcPath); // We have to wait until first registration attempt or we'll hit a null pointer
 		}
 		else if (extension == L".isb")
 		{
 			// Found ISB
 			auto isbPath = entry.path().c_str();
-			LEASI_INFO(L"\t\tFound ISB: %s", isbPath);
+			LEASI_INFO(L"\t\tFound ISB: {}", isbPath);
 			ISBsToRegister.push_back(_wcsdup(isbPath)); // We have to wait until first registration attempt or we'll hit a null pointer
 		}
 	}

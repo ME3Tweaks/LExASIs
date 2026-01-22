@@ -32,8 +32,8 @@ namespace Autoload
 				ProcessIni_orig(ExtraContent, &autoloadPath, nullptr);
 			}
 			DLCPackage::GExtraContent = ExtraContent;
+			LEASI_INFO(L"DLC mount complete");
 		}
-		LEASI_INFO(L"DLC mount complete");
 	}
 
 
@@ -57,11 +57,13 @@ namespace Autoload
 
 	// Marks all objects as RF_Root that have a outermost outer that is the same as the listed
 	// UPackage (which means they are from this package)
-	void RegisterStartupFile(UPackage* package)
+	void RegisterStartupFile(UPackage* package, bool shouldLog)
 	{
-		LEASI_INFO("Mounting startup file: {}", package->Name.GetName());
-		// logger.writeWideLineToLog(wstring_format(L"Mounting startup file: %hs", package->Name.GetName()), true);
+		if (shouldLog) {
+			LEASI_INFO("Mounting startup file: {}", package->Name.GetName());
+		}
 
+		UINT numRooted = 0;
 		auto GObjects = UObject::GObjObjects;
 		for (UINT i = 0; i < GObjects->Count(); i++)
 		{
@@ -78,13 +80,20 @@ namespace Autoload
 				// Root the entire package
 				if (outerMost == package)
 				{
-					LEASI_INFO(L"  Rooting: {}", obj->GetFullName());
-					// logger.writeWideLineToLog(wstring_format(L"  Rooting: %hs", obj->GetFullName()), true);
+					if (shouldLog) {
+						LEASI_TRACE(L"  Rooting: {}", obj->GetFullName());
+					}
 					RootObject(obj);
+					numRooted++;
 				}
 			}
 		}
+
+		if (shouldLog) {
+			LEASI_INFO(L"  Rooted {} objects", numRooted);
+		}
 	}
+
 
 	tInstallDownloadableContent* InstallDownloadableContent_orig = nullptr;
 	void InstallDownloadableContent_hook(void* unk)
@@ -100,6 +109,8 @@ namespace Autoload
 				const char* name1 = package->Name.GetName();
 				const wchar_t* name2 = globalPackageName.Chars();
 
+				auto shouldLog = (_wcsnicmp(name2, L"Startup_", 8) == 0);
+
 				// Convert name1 to wide string for comparison
 				std::wstring name1Wide(std::strlen(name1), L'\0');
 				std::mbstowcs(&name1Wide[0], name1, std::strlen(name1));
@@ -107,7 +118,7 @@ namespace Autoload
 				if (isSameName)
 				{
 					// It's a match
-					RegisterStartupFile(package);
+					RegisterStartupFile(package, shouldLog);
 					break; // Go to the next one
 				}
 			}
@@ -124,7 +135,7 @@ namespace Autoload
 			if (!ECHUD)
 			{
 				// Init new object once we start processing events
-				ECHUD = new ExtraContentHUD{ true };
+				ECHUD = new ExtraContentHUD{ false };
 			}
 			ECHUD->Update(((ABioHUD*)Context)->Canvas, DLCPackage::GExtraContent);
 			ECHUD->Draw();
@@ -188,6 +199,10 @@ namespace Autoload
 			{
 				LEASI_WARN(L"Content scan took too long, giving up waiting");
 			}
+
+			// Log what filename we hooked on for troubleshooting.
+			std::wstring loadingFilename = std::filesystem::path(*filePath).filename().wstring();
+			LEASI_INFO(L"TFC registration taking place when {} was about to read from disk", loadingFilename);
 
 			RegisterTFCs();
 		}
