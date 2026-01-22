@@ -7,7 +7,6 @@
 
 namespace TextureOverride
 {
-    void InitializeLogger();
     void InitializeGlobals(::LESDK::Initializer& Init);
     void InitializeHooks(::LESDK::Initializer& Init);
     void InitializeArgs();
