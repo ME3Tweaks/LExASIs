@@ -2,6 +2,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include "Common/Base.hpp"
+#include "LESDK/Headers.hpp"
 #include "Common/DefaultLogger.hpp"
 
 namespace Common

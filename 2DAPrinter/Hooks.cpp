@@ -1,5 +1,6 @@
 #include "Hooks.hpp"
 #include "Common/Objects.hpp"
+#include "Common/DefaultLogger.hpp"
 #include "LESDK/Headers.hpp"
 #include <sstream>
 
@@ -14,79 +15,73 @@ namespace Bio2DAPrinter
 			auto colNames = twoDA->GetColumnNames();
 			auto rowNames = twoDA->GetRowNames();
 
-			char* buffer = new char[512];
-			sprintf(buffer, "Printout for Bio2DA %hs\n", twoDA->GetFullName());
-			logger.writeToLog(buffer, false, false);
-			for (int j = 0; j < rowNames.Count; j++)
+			LEASI_INFO(L"Printout for Bio2DA {}", twoDA->GetFullName());
+			for (UINT j = 0; j < rowNames.Count(); j++)
 			{
-				for (int k = 0; k < colNames.Count; k++)
+				for (UINT k = 0; k < colNames.Count(); k++)
 				{
-					char* buffer = new char[512];
-					if (FName nameVal; twoDA->GetNameEntryII(j, k, &nameVal))
+					auto rowName = rowNames.GetData()[j].ToString(SFXName::FormatMode::k_formatInstanced);
+					auto colName = colNames.GetData()[k].ToString(SFXName::FormatMode::k_formatInstanced);
+					if (SFXName nameVal; twoDA->GetNameEntryII(j, k, &nameVal))
 					{
-						sprintf(buffer, "2DA[%hs][%hs] = %hs NAME\n", rowNames.Data[j].GetName(), colNames.Data[k].GetName(), nameVal.Instanced());
+						LEASI_INFO(L"2DA[{}][{}] = {} NAME", rowName, colName, nameVal.ToString(SFXName::FormatMode::k_formatInstanced));
 					}
 					else if (FString strVal; twoDA->GetStringEntryII(j, k, &strVal))
 					{
-						sprintf(buffer, "2DA[%hs][%hs] = %ls STRING\n", rowNames.Data[j].GetName(), colNames.Data[k].GetName(), strVal.Data);
+						LEASI_INFO(L"2DA[{}][{}] = {} STRING", rowName, colName, strVal);
 					}
-					else if (float floatVal = -123.35; twoDA->GetFloatEntryII(j, k, &floatVal))
+					else if (float floatVal = -123.35f; twoDA->GetFloatEntryII(j, k, &floatVal))
 					{
-						sprintf(buffer, "2DA[%hs][%hs] = %f FLOAT\n", rowNames.Data[j].GetName(), colNames.Data[k].GetName(), floatVal);
+						LEASI_INFO(L"2DA[{}][{}] = {} FLOAT", rowName, colName, floatVal);
 					}
 					else if (int intVal = -895; twoDA->GetIntEntryII(j, k, &intVal))
 					{
-						sprintf(buffer, "2DA[%hs][%hs] = %d INT\n", rowNames.Data[j].GetName(), colNames.Data[k].GetName(), intVal);
+						LEASI_INFO(L"2DA[{}][{}] = {} INT", rowName, colName, intVal);
 					}
 					else
 					{
-						sprintf(buffer, "2DA[%hs][%hs] = NULL\n", rowNames.Data[j].GetName(), colNames.Data[k].GetName());
+						LEASI_INFO(L"2DA[{}][{}] = NULL", rowName, colName);
 					}
-
-					logger.writeToLog(buffer, false, false);
 				}
 			}
 		}
 	}
 
-	void Parse2DANR(UBio2DANumberedRows* twoDA)
+	void Parse2DANumberedRows(UBio2DANumberedRows* twoDA)
 	{
 		if (twoDA)
 		{
 			auto colNames = twoDA->GetColumnNames();
 			auto rowCount = twoDA->GetNumRows();
 
-			char* buffer = new char[512];
-			sprintf(buffer, "Printout for Bio2DANumberedRows %hs\n", twoDA->GetFullName());
-			logger.writeToLog(buffer, false, false);
+			LEASI_INFO(L"Printout for Bio2DANumberedRows {}", twoDA->GetFullName());
+
 			for (int j = 0; j < rowCount; j++)
 			{
 				auto rowIndex = twoDA->GetRowNumber(j);
-				for (int k = 0; k < colNames.Count; k++)
+				for (UINT k = 0; k < colNames.Count(); k++)
 				{
-					buffer = new char[512];
-					if (FName nameVal; twoDA->GetNameEntryII(j, k, &nameVal))
+					auto colName = colNames.GetData()[k].ToString(SFXName::FormatMode::k_formatInstanced);
+					if (SFXName nameVal; twoDA->GetNameEntryII(j, k, &nameVal))
 					{
-						sprintf(buffer, "2DANR[%d][%hs] = %hs NAME\n", rowIndex, colNames.Data[k].GetName(), nameVal.Instanced());
+						LEASI_INFO(L"2DANR[{}][{}] = {} NAME", rowIndex, colName, nameVal.ToString(SFXName::FormatMode::k_formatInstanced));
 					}
 					else if (FString strVal; twoDA->GetStringEntryII(j, k, &strVal))
 					{
-						sprintf(buffer, "2DANR[%d][%hs] = %ls STRING\n", rowIndex, colNames.Data[k].GetName(), strVal.Data);
+						LEASI_INFO(L"2DANR[{}][{}] = {} STRING", rowIndex, colName, strVal);
 					}
-					else if (float floatVal = -123.35; twoDA->GetFloatEntryII(j, k, &floatVal))
+					else if (float floatVal = -123.35f; twoDA->GetFloatEntryII(j, k, &floatVal))
 					{
-						sprintf(buffer, "2DANR[%d][%hs] = %f FLOAT\n", rowIndex, colNames.Data[k].GetName(), floatVal);
+						LEASI_INFO(L"2DANR[{}][{}] = {} FLOAT", rowIndex, colName, floatVal);
 					}
 					else if (int intVal = -895; twoDA->GetIntEntryII(j, k, &intVal))
 					{
-						sprintf(buffer, "2DANR[%d][%hs] = %d INT\n", rowIndex, colNames.Data[k].GetName(), intVal);
+						LEASI_INFO(L"2DANR[{}][{}] = {} INT", rowIndex, colName, intVal);
 					}
 					else
 					{
-						sprintf(buffer, "2DANR[%d][%hs] = NULL\n", rowIndex, colNames.Data[k].GetName());
+						LEASI_INFO("2DANR[{}][{}] = NULL", rowIndex, colName);
 					}
-
-					logger.writeToLog(buffer, false, false);
 				}
 			}
 		}
@@ -94,6 +89,7 @@ namespace Bio2DAPrinter
 
 
 	void Print2DAs() {
+		Common::RemoveLoggingPattern();
 		Common::TypedObjectIterator<UBio2DA> Iterator{};
 		for (; Iterator; ++Iterator)
 		{
@@ -107,6 +103,7 @@ namespace Bio2DAPrinter
 				Parse2DANumberedRows(static_cast<UBio2DANumberedRows*>(bio2DA));
 			}
 		}
+		Common::RestoreLoggingPattern();
 	}
 
 	// ! UObject::ProcessEvent hook

@@ -5,7 +5,7 @@
 #include <SPI.h>
 
 
-namespace SeqActLogEnabler
+namespace Bio2DAPrinter
 {
     void InitializeGlobals(::LESDK::Initializer& Init);
     void InitializeHooks(::LESDK::Initializer& Init);
