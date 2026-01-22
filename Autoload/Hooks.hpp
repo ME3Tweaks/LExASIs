@@ -7,6 +7,14 @@
 
 namespace Autoload
 {
+	// Definitions
+#define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x3BD5D0)
+#define REGISTER_TFC_RVA			::LESDK::Address::FromOffset(0x2628C0)
+#define CACHECONTENT_WRAPPER_RVA    ::LESDK::Address::FromOffset(0x73760)
+#define OPENFILE_READ_RVA	        ::LESDK::Address::FromOffset(0xF7910)
+#define PROCESSINI_RVA		        ::LESDK::Address::FromOffset(0xC8BE0)
+#define INSTALL_DLC_RVA		        ::LESDK::Address::FromOffset(0xB5D4D0)
+
 	// Variables
 	extern bool bRegisteredISBs;
 	extern bool bRegisteredTFCs;
@@ -29,19 +37,12 @@ namespace Autoload
 	extern tInstallDownloadableContent* InstallDownloadableContent_orig;
 	void InstallDownloadableContent_hook(void* unk);
 
-	// ! UObject::RootObject
-	// Sets the RF_Root flag, as part of making object startup
-	// ========================================
-	using tUObjectRoot = void(UObject* callingObject);
-	extern tUObjectRoot* RootObject; // We aren't hooking this, we just need to call it.
-
     // ! UGameEngine::Exec
 	// For registering out custom console command for debugging
     // ========================================
     using t_UGameEngine_Exec = DWORD(UGameEngine* Context, WCHAR const* Command, void* Archive);
     extern t_UGameEngine_Exec* UGameEngine_Exec_orig;
     DWORD UGameEngine_Exec_hook(UGameEngine* Context, WCHAR const* Command, void* Archive);
-
 
 	// ! UObject::ProcessEvent
 	// Renders autoload profiler, allows toggling it.
@@ -55,7 +56,7 @@ namespace Autoload
 	// ========================================
 	using tCacheContentWrapper = void(long long parm1, const wchar_t* filePath, bool replaceIfExisting, bool warnIfExists);
 	extern tCacheContentWrapper* CacheContentWrapper_orig;
-	void CacheContentWrapper_hook(long long parm1, wchar_t* filePath, bool replaceIfExisting, bool warnIfExists);
+	void CacheContentWrapper_hook(long long parm1, const wchar_t* filePath, bool replaceIfExisting, bool warnIfExists);
 
 	// ! OpenFileRead
 	// Called when files are opened for reading (Core.pcc is the first invocation)
@@ -69,4 +70,7 @@ namespace Autoload
 	// =====================================================================
 	using tRegisterTFC = void(FString* path);
 	extern tRegisterTFC* RegisterTFC;
+
+	// Sets the root object flag on the given object
+	void RootObject(UObject* callingObject);
 }

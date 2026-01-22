@@ -168,7 +168,7 @@ namespace Autoload
 		LEASI_INFO(L"TFC Registration complete");
 	}
 
-	tOpenFileRead* OpenFileRead_origSomethingFirstLoad_orig = nullptr;
+	tOpenFileRead* OpenFileRead_orig = nullptr;
 	void* OpenFileRead_hook(long long* parm1, void* parm2, wchar_t** filePath, void* parm4)
 	{
 		if (!DLCPackage::bContentScanStarted)
@@ -194,5 +194,12 @@ namespace Autoload
 
 		// This call seems to be for when files are opened for reading (CreateFileW is called). This happens a lot with things like TFC reading but first hit is Core.pcc
 		return OpenFileRead_orig(parm1, parm2, filePath, parm4);
+	}
+
+	void RootObject(UObject* callingObject)
+	{
+		if (callingObject) {
+			callingObject->ObjectFlags |= 0x4000; //RF_Root
+		}
 	}
 }

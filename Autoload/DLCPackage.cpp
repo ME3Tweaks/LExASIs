@@ -7,11 +7,14 @@
 bool DLCPackage::bContentScanComplete = false;
 bool DLCPackage::bContentScanStarted = false;
 ExtraContent* DLCPackage::GExtraContent = nullptr;
-
+std::vector<DLCPackage> DLCPackage::dlcsToMount{};
 
 void DLCPackage::ScanForDLCContent() {
-	LEASI_INFO(L"Finding DLC content in %s...", k_searchFoldersRoot);
+	LEASI_INFO(L"Finding DLC content in {}...", k_searchFoldersRoot);
 	std::filesystem::path const dlcDirectory{ k_searchFoldersRoot };
+
+	// Print full resolved path here
+
 	FString MountLoadError{};
 	for (std::filesystem::directory_entry const& gameDLCDir : std::filesystem::directory_iterator{ dlcDirectory })
 	{
