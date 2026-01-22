@@ -15,6 +15,8 @@ asi_target (Common
     "json.hpp"
     "Mount.cpp"
     "Mount.hpp"
+    "DefaultLogger.hpp"
+    "DefaultLogger.cpp"
   LINKS
     "spdlog"
   VLINKS

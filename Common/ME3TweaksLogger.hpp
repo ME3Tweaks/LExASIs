@@ -181,6 +181,24 @@ private:
         }
     }
 
+    template<typename... Args>
+    void LogWithoutTimestamp(spdlog::level::level_enum level, spdlog::format_string_t<Args...> fmt, Args&&... args)
+    {
+        if (m_logger && m_logger->should_log(level))
+        {
+            m_logger->log(level, fmt::format(fmt, std::forward<Args>(args)...));
+        }
+    }
+
+    template<typename... Args>
+    void LogWithoutTimestampW(spdlog::level::level_enum level, spdlog::wformat_string_t<Args...> fmt, Args&&... args)
+    {
+        if (m_logger && m_logger->should_log(level))
+        {
+            m_logger->log(level, fmt::format(fmt, std::forward<Args>(args)...));
+        }
+    }
+
     std::shared_ptr<spdlog::logger> m_logger;
     std::chrono::steady_clock::time_point m_startTime;
 };
