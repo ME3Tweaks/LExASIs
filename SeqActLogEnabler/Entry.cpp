@@ -26,7 +26,7 @@ SPI_IMPLEMENT_ATTACH
 	);
 	try
 	{
-		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, "SeqActLog.log");
+		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, ASI_NAME_NO_SPACE_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
@@ -35,7 +35,7 @@ SPI_IMPLEMENT_ATTACH
 	}
 
 	// Initialize screen logger
-	::SeqActLogEnabler::OnScreenLogger = std::make_unique<::SeqActLogEnabler::ScreenLogger>(L"SeqAct_Log Enabler v5");
+	::SeqActLogEnabler::OnScreenLogger = std::make_unique<::SeqActLogEnabler::ScreenLogger>(L"SeqAct_Log Messages");
 
 
 	return true;

@@ -15,6 +15,7 @@ SPI_IMPLEMENT_ATTACH
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 
 	// Initialize console and file logger for KismetLog.txt
+	// KismetLog definitely needs to use ME3TweaksLogger due to its different prefixes
 	::LESDK::InitializeConsole();
 	auto outputType = Common::ME3TweaksLogger::LogOutput(
 		Common::ME3TweaksLogger::LogOutput::OutputToFile |
