@@ -98,7 +98,8 @@ namespace Autoload
 	tInstallDownloadableContent* InstallDownloadableContent_orig = nullptr;
 	void InstallDownloadableContent_hook(void* unk)
 	{
-		InstallDownloadableContent_orig(unk);
+		InstallDownloadableContent_orig(unk); // Will call processIni and mount the content
+
 		for (UINT i = 0; i < DLCPackage::GExtraContent->GlobalPackages.Count(); i++)
 		{
 			auto globalPackageName = DLCPackage::GExtraContent->GlobalPackages.GetData()[i];
