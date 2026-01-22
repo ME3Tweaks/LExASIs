@@ -3,7 +3,7 @@
 
 #include "TextureOverride/Loading.hpp"
 #include "TextureOverride/Manifest.hpp"
-#include "TextureOverride/Mount.hpp"
+#include "Common/Mount.hpp"
 #include "TextureOverride/Hooks.hpp"
 #include <stack>
 
@@ -39,7 +39,7 @@ namespace TextureOverride
             }
 
             MountLoadError.Clear();
-            int const MountPriority = TryReadMountPriority(DlcPath, SDK_TARGET, &MountLoadError);
+            int const MountPriority = Common::TryReadMountPriority(DlcPath, &MountLoadError);
 
             if (MountPriority < 0) [[unlikely]]
             {

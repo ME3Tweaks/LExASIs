@@ -10,8 +10,6 @@ asi_target (TextureOverride
     "Loading.hpp"
     "Manifest.cpp"
     "Manifest.hpp"
-    "Mount.cpp"
-    "Mount.hpp"
     "SharedVersion.h"
     "TextureOverride.rc"
   VLINKS
