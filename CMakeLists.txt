@@ -223,6 +223,10 @@ add_subdirectory ("SSRUnlocker")
 add_subdirectory ("TextureOverride")
 add_subdirectory ("StreamingLevelsHUD")
 add_subdirectory ("LEXInterop")
+add_subdirectory ("Autoload")
+add_subdirectory ("HotReload")
+add_subdirectory ("PNGScreenshots")
+
 
 # set_property (DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "TextureOverride-LE3")
 
