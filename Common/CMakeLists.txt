@@ -13,6 +13,8 @@ asi_target (Common
     "Utils.cpp"
     "Utils.hpp"
     "json.hpp"
+    "Mount.cpp"
+    "Mount.hpp"
   LINKS
     "spdlog"
   VLINKS
