@@ -42,7 +42,7 @@
 #define LEASI_WARN(...)                     SPDLOG_WARN(__VA_ARGS__)
 #define LEASI_ERROR(...)                    SPDLOG_ERROR(__VA_ARGS__)
 #define LEASI_CRIT(...)                     SPDLOG_CRITICAL(__VA_ARGS__)
-
+#define LEASI_FLUSH()                       spdlog::default_logger()->flush();
 namespace Common
 {
     void InitializeLoggerDefault();
