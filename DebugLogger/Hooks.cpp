@@ -6,6 +6,12 @@
 
 namespace DebugLogger
 {
+	// Variables
+	// ========================================
+
+	// If every export's creation should be logged for deep debugging. Requirse -debugexportcreation command line arg.
+	bool bLogExportCreation = false;
+
 
 	void InstallSharedHooks(::LESDK::Initializer& Init)
 	{
@@ -15,6 +21,21 @@ namespace DebugLogger
 		CHECK_RESOLVED(outputDebugStringW_target);
 		OutputDebugStringW_orig = (tOutputDebugStringW*)Init.InstallHook("OutputDebugStringW", outputDebugStringW_target, OutputDebugStringW_hook);
 		CHECK_RESOLVED(OutputDebugStringW_orig);
+
+		// Import resolution failures
+		//----------------------------------------
+		auto const CreateImport_target = Init.ResolveTyped<tCreateEntry>(BUILTIN_VERIFYIMPORT_RVA);
+		CHECK_RESOLVED(CreateImport_target);
+		CreateImport_orig = (tCreateEntry*)Init.InstallHook("CreateImport", CreateImport_target, CreateImport_hook);
+		CHECK_RESOLVED(CreateImport_orig);
+
+		// Export creation failures (with optional success logging for pinpointing issues)
+		// ---------------------------------------
+		bLogExportCreation = (nullptr != std::wcsstr(GetCommandLineW(), L" -debugexportcreation"));
+		auto const CreateExport_target = Init.ResolveTyped<tCreateEntry>(BUILTIN_CREATEEXPORT_RVA);
+		CHECK_RESOLVED(CreateExport_target);
+		CreateExport_orig = (tCreateEntry*)Init.InstallHook("CreateExport", CreateExport_target, CreateExport_hook);
+		CHECK_RESOLVED(CreateExport_orig);
 
 		/*
 		// UObject::ProcessEvent hook for UnrealScript Activated() logging
@@ -32,9 +53,10 @@ namespace DebugLogger
 		CHECK_RESOLVED(UObject_ProcessInternal_orig);
 		*/
 
-		LEASI_INFO("hooks initialized");
+		LEASI_INFO("Hooks initialized");
 	}
 
+#pragma region OutputDebugStringW
 	tOutputDebugStringW* OutputDebugStringW_orig = nullptr;
 	void OutputDebugStringW_hook(LPCWSTR lpcszString)
 	{
@@ -49,6 +71,49 @@ namespace DebugLogger
 		}
 
 		LEASI_INFO(strToLog);
+	}
+#pragma endregion
+
+	// LOG FAILED IMPORTS
+	tCreateEntry* CreateImport_orig = nullptr;
+	UObject* CreateImport_hook(ULinkerLoad* Context, int i)
+	{
+		UObject* object = CreateImport_orig(Context, i);
+		if (object == nullptr)
+		{
+			FObjectImport importEntry = Context->ImportMap(i);
+			LEASI_WARN("Could not resolve #{}: {} ({})", -i - 1, importEntry.ObjectName.GetName(), importEntry.ClassName.GetName());
+			LEASI_FLUSH();
+		}
+		return object;
+	}
+
+	tCreateEntry* CreateExport_orig = nullptr;
+	UObject* CreateExport_hook(ULinkerLoad* Context, int i)
+	{
+		if (bLogExportCreation) {
+			LEASI_INFO(L"Creating Export {} in {}", i + 1, Context->Filename);
+		}
+		UObject* object = CreateExport_orig(Context, i);
+		if (object != nullptr) {
+			if (bLogExportCreation) {
+				LEASI_INFO(L"Loaded Export {} ({}) in {}", i + 1, object->GetName(), Context->Filename);
+			}
+		}
+		else {
+			LEASI_CRIT(L"FAILED TO CREATE EXPORT #{} from {}!", i + 1, Context->Filename);
+			LEASI_FLUSH();
+		}
+		if (bLogExportCreation) {
+			LEASI_FLUSH();
+		}
+		/*if (object == nullptr)
+		{
+			FObjectImport importEntry = Context->ImportMap(i);
+			LEASI_INFO(L"Could not resolve #%d: %hs (%hs) in file: %s\n", -i - 1, importEntry.ObjectName.GetName(), importEntry.ClassName.GetName(), Context->Filename.Data), true);
+			logger.flush();
+		}*/
+		return object;
 	}
 
 	// ! UObject::ProcessEvent hook

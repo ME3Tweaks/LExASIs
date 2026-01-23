@@ -20,7 +20,19 @@ namespace DebugLogger
     extern tOutputDebugStringW* OutputDebugStringW_orig;
     void OutputDebugStringW_hook(LPCWSTR lpcszString);
 
+    // ! CreateImport
+    // For logging when import resolution fails.
+    // ===================================================
+    using tCreateEntry = UObject*(ULinkerLoad* Context, int i);
+    extern tCreateEntry* CreateImport_orig;
+    UObject* CreateImport_hook(ULinkerLoad* Context, int i);
 
+    // ! CreateExport
+    // For logging when export creation fails.
+    // ===================================================
+	extern bool bLogExportCreation;
+    extern tCreateEntry* CreateExport_orig;
+    UObject* CreateExport_hook(ULinkerLoad* Context, int i);
 
     // ! UObject::ProcessEvent hook for logging UnrealScript Activated() calls.
     // ========================================
