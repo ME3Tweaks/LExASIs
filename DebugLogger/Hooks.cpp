@@ -6,11 +6,17 @@
 
 namespace DebugLogger
 {
-	// ! Global variables
-	// ========================================
 
 	void InstallSharedHooks(::LESDK::Initializer& Init)
 	{
+		// Debug String Output
+		// ----------------------------------------
+		auto const outputDebugStringW_target = Init.ResolveTyped<tOutputDebugStringW>(::LESDK::Address::FromAbsolute(OutputDebugStringW));
+		CHECK_RESOLVED(outputDebugStringW_target);
+		OutputDebugStringW_orig = (tOutputDebugStringW*)Init.InstallHook("OutputDebugStringW", outputDebugStringW_target, OutputDebugStringW_hook);
+		CHECK_RESOLVED(OutputDebugStringW_orig);
+
+		/*
 		// UObject::ProcessEvent hook for UnrealScript Activated() logging
 		// ----------------------------------------
 		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
@@ -24,8 +30,25 @@ namespace DebugLogger
 		CHECK_RESOLVED(UObject_ProcessInternal_target);
 		UObject_ProcessInternal_orig = (t_UObject_ProcessInternal*)Init.InstallHook("UObject::ProcessInternal", UObject_ProcessInternal_target, UObject_ProcessInternal_hook);
 		CHECK_RESOLVED(UObject_ProcessInternal_orig);
+		*/
 
 		LEASI_INFO("hooks initialized");
+	}
+
+	tOutputDebugStringW* OutputDebugStringW_orig = nullptr;
+	void OutputDebugStringW_hook(LPCWSTR lpcszString)
+	{
+		OutputDebugStringW_orig(lpcszString);
+
+		// Strip trailing newline before feeding to LEASI_INFO
+		// Maybe consider prefixing with [DEBUG] or similar in future
+		std::wstring strToLog(lpcszString);
+		if (!strToLog.empty() && strToLog.back() == L'\n')
+		{
+			strToLog.pop_back();
+		}
+
+		LEASI_INFO(strToLog);
 	}
 
 	// ! UObject::ProcessEvent hook

@@ -11,6 +11,17 @@ namespace DebugLogger
     void InstallSharedHooks(::LESDK::Initializer& Init);
     void InstallGameSpecificHooks(::LESDK::Initializer& Init);
 
+    // Hook prototypes and definitions.
+
+    // ! OutputDebugStringW
+    // For logging debug console calls.
+    // ===================================================
+    using tOutputDebugStringW = void(LPCWSTR lpcszString);
+    extern tOutputDebugStringW* OutputDebugStringW_orig;
+    void OutputDebugStringW_hook(LPCWSTR lpcszString);
+
+
+
     // ! UObject::ProcessEvent hook for logging UnrealScript Activated() calls.
     // ========================================
 
