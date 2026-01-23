@@ -7,6 +7,7 @@
 namespace Bio2DAPrinter
 {
 	bool CanPrint2DAs = true;
+	bool bPrintingNextFrame = false;
 
 	void Parse2DA(UBio2DA* twoDA)
 	{
@@ -106,6 +107,21 @@ namespace Bio2DAPrinter
 		Common::RestoreLoggingPattern();
 	}
 
+	void DrawDirectionsText(UCanvas* Canvas) {
+		int const Width = Canvas->SizeX;
+		static FColor   s_profileColorMain{ 0xff, 0xff, 0xff, 0xff };
+
+		Canvas->CurX = (Width / 3.0f) * 2;
+		Canvas->CurY = 5;
+		Canvas->DrawColor = s_profileColorMain;
+		if (bPrintingNextFrame) {
+			Canvas->DrawTextScaled(FString::Printf(L"Printing 2DAs to log..."), 1.f, 1.f);
+		}
+		else {
+			Canvas->DrawTextScaled(FString::Printf(L"Press CTRL + 2 to print 2DAs to log"), 1.f, 1.f);
+		}
+	}
+
 	// ! UObject::ProcessEvent hook
 	// ========================================
 
@@ -115,14 +131,22 @@ namespace Bio2DAPrinter
 		// Handle BioHUD.PostRender for on-screen display
 		if (CanPrint2DAs && Function->GetFullName().Equals(L"Function SFXGame.BioHUD.PostRender"))
 		{
-			// Toggle drawing/not drawing
-			if ((GetKeyState('2') & 0x8000) && (GetKeyState(VK_CONTROL) & 0x8000)) {
-				if (CanPrint2DAs) {
-					Print2DAs();
-					CanPrint2DAs = false; // Will not activate combo again until you re-press combo
-					LEASI_INFO("Printed 2DAs to log. Can no longer print 2DAs in this session.");
+			if (bPrintingNextFrame) {
+				// Print on this frame.
+				Print2DAs();
+				CanPrint2DAs = false; // Will not activate combo again until you re-press combo
+				LEASI_INFO("Printed 2DAs to log. Can no longer print 2DAs in this session.");
+			}
+			else {
+				// Listening for CTRL + 2 combo.
+				if ((GetKeyState('2') & 0x8000) && (GetKeyState(VK_CONTROL) & 0x8000)) {
+					// Next frame draw the printing text.
+					bPrintingNextFrame = true;
 				}
 			}
+
+			auto postRenderParams = static_cast<ABioHUD*>(Context);
+			DrawDirectionsText(postRenderParams->Canvas);
 		}
 
 		UObject_ProcessEvent_orig(Context, Function, Parms, Result);
