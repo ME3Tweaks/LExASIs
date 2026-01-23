@@ -82,7 +82,49 @@ namespace DebugLogger
 		if (object == nullptr)
 		{
 			FObjectImport importEntry = Context->ImportMap(i);
-			LEASI_WARN("Could not resolve #{}: {} ({})", -i - 1, importEntry.ObjectName.GetName(), importEntry.ClassName.GetName());
+#if defined(SDK_TARGET_LE2)
+			static bool bLoggedFirstBaseFailure = false;
+			std::wstring filenameStr(Context->Filename.Chars());
+			// Filter out shipped startup files because they generate tons of imports 
+			// that developers will never care about.
+			// Also makes game startup much slower to log all of them.
+			if (filenameStr.find(L"\\Startup_00_Shared") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_DLC_UNC_Moment01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_HEN_VT") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRE_Cerberus") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRE_Collectors") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRE_DA") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRE_Terminus") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRE_General") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRO_Gulp01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRO_Pepper01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_PRO_Pepper02") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_DLC_UNC_Hammer01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_Kasumi") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_CON_Pack01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_MCR_03") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_UNC_Pack01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_CER_02") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_Part01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_DLC_DHME1") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_Pack02") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_UPD_Patch02") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_UPD_Patch03") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_METR_Patch01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_EXP_Part01") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_EXP_Part02") != std::wstring::npos
+				|| filenameStr.find(L"\\Startup_CON_Pack02") != std::wstring::npos
+				) {
+				if (!bLoggedFirstBaseFailure) {
+					LEASI_INFO("Note: Import resolution failures in LE2's shipping startup files are suppressed for performance.");
+					bLoggedFirstBaseFailure = true;
+				}
+				// do not log these.
+				return object;
+			}
+#endif
+
+			LEASI_WARN("Could not resolve #{}: {} ({}) in {}", -i - 1, importEntry.ObjectName.GetName(), importEntry.ClassName.GetName(), Context->Filename);
 			LEASI_FLUSH();
 		}
 		return object;
