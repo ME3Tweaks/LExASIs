@@ -53,7 +53,12 @@ namespace DebugLogger
 		LoadPackageAsyncTick_orig = (tLoadPackageAsyncTick*)Init.InstallHook("LoadPackageAsyncTick", LoadPackageAsyncTick_target, LoadPackageAsyncTick_hook);
 		CHECK_RESOLVED(LoadPackageAsyncTick_orig);
 
-
+		// StaticAllocateObject failures where exports fail to load
+		// ---------------------------------------
+		auto const StaticAllocateObject_target = Init.ResolveTyped<tStaticAllocateObject>(BUILTIN_STATICALLOCATEOBJECT_RVA);
+		CHECK_RESOLVED(StaticAllocateObject_target);
+		StaticAllocateObject_orig = (tStaticAllocateObject*)Init.InstallHook("StaticAllocateObject", StaticAllocateObject_target, StaticAllocateObject_hook);
+		CHECK_RESOLVED(StaticAllocateObject_orig);
 
 		/*
 		// UObject::ProcessEvent hook for UnrealScript Activated() logging
@@ -91,6 +96,8 @@ namespace DebugLogger
 		LEASI_INFO(strToLog);
 	}
 #pragma endregion
+
+#pragma region VerifyImport/CreateExport
 
 	// LOG FAILED IMPORTS
 	tCreateEntry* CreateImport_orig = nullptr;
@@ -175,6 +182,9 @@ namespace DebugLogger
 		}*/
 		return object;
 	}
+#pragma endregion
+
+#pragma region LoadPackage / LoadPackageAsync
 
 	tLoadPackage* LoadPackage_orig = nullptr;
 	UPackage* LoadPackage_hook(UPackage* outer, wchar_t* packageName, ELoadFlags loadFlags)
@@ -191,6 +201,9 @@ namespace DebugLogger
 		LEASI_INFO(L"Loading package asynchronously: {}, {:2f}%", linker->PackageName, linker->EstimatedLoadPercentage);
 		return result;
 	}
+#pragma endregion
+
+#pragma region StaticAllocateObject
 
 	void logAllocationFailure(UClass* instancingClass, UObject* outer, SFXName objClassName, UObject* archetype) {
 		auto instancingClassName = instancingClass ? instancingClass->GetFullName() : nullptr;
@@ -232,6 +245,8 @@ namespace DebugLogger
 			exit(1);
 		}
 	}
+#pragma endregion
+
 
 	// ! UObject::ProcessEvent hook
 	// ========================================
