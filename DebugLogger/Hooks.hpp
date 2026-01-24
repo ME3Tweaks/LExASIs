@@ -8,6 +8,55 @@
 
 namespace DebugLogger
 {
+    // Struct definitions
+	
+	// Parameter passed to package loading methods
+	// From old LE1 SDK
+	struct UnLinker
+	{
+		virtual void Unknown0() = 0;
+		wchar_t* PackageName;
+		//virtual void Unknown3() = 0;
+		//virtual void Unknown4() = 0;
+		//virtual void Unknown5() = 0;
+		//virtual void Unknown6() = 0;
+		//virtual void Unknown7() = 0;
+		//virtual void Unknown8() = 0;
+		//virtual void Unknown9() = 0;
+		//virtual void Unknown10() = 0;
+		//virtual void Unknown11() = 0;
+		//virtual void Unknown12() = 0;
+		//virtual void Unknown13() = 0;
+		INT NameCount1; // IDK
+		INT NameCount2; // IDK
+		FGuid PackageGuid;
+		ULinkerLoad* Linker;
+		TArray<void*> CompletionCallbacks;
+		INT ImportIndex;
+		INT ExportIndex;
+		INT PreLoadIndex;
+		INT PostLoadIndex;
+		FLOAT TimeLimit;
+		BOOL bUseTimeLimit;
+		BOOL bTimeLimitExceeded;
+		DOUBLE TickStartTime;
+		//UObject* LastObjectWorkWasPeformedOn;
+		//TCHAR* LastTypeOfWorkPerformed;
+		//DOUBLE LoadStartTime;
+		//FLOAT LoadPercentage;
+		//BOOL bHasFinishedExportGuids;
+
+		FLOAT Load1;
+		FLOAT Load2;
+		FLOAT Load3;
+		FLOAT Load4;
+		FLOAT Load5;
+		FLOAT Load6;
+		FLOAT Load7;
+		FLOAT EstimatedLoadPercentage;
+	};
+
+
     void InstallSharedHooks(::LESDK::Initializer& Init);
     void InstallGameSpecificHooks(::LESDK::Initializer& Init);
 
@@ -33,6 +82,28 @@ namespace DebugLogger
 	extern bool bLogExportCreation;
     extern tCreateEntry* CreateExport_orig;
     UObject* CreateExport_hook(ULinkerLoad* Context, int i);
+
+	// ! CreateImport
+	// For logging when import resolution fails.
+	// ===================================================
+	using tCreateEntry = UObject * (ULinkerLoad* Context, int i);
+	extern tCreateEntry* CreateImport_orig;
+	UObject* CreateImport_hook(ULinkerLoad* Context, int i);
+
+	using tLoadPackage = UPackage * (UPackage* outer, wchar_t* packageName, ELoadFlags loadFlags);
+	extern tLoadPackage* LoadPackage_orig;
+	UPackage* LoadPackage_hook(UPackage* outer, wchar_t* packageName, ELoadFlags loadFlags);
+
+	using tLoadPackageAsyncTick = UINT(UnLinker* linker, int a2, float a3);
+	extern tLoadPackageAsyncTick* LoadPackageAsyncTick_orig;
+	UINT LoadPackageAsyncTick_hook(UnLinker* linker, int a2, float a3);
+
+
+
+
+
+
+
 
     // ! UObject::ProcessEvent hook for logging UnrealScript Activated() calls.
     // ========================================

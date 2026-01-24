@@ -37,6 +37,22 @@ namespace DebugLogger
 		CreateExport_orig = (tCreateEntry*)Init.InstallHook("CreateExport", CreateExport_target, CreateExport_hook);
 		CHECK_RESOLVED(CreateExport_orig);
 
+		// Package loading (Blocking)
+		// ---------------------------------------
+		auto const LoadPackage_target = Init.ResolveTyped<tLoadPackage>(BUILTIN_LOADPACKAGE_RVA);
+		CHECK_RESOLVED(LoadPackage_target);
+		LoadPackage_orig = (tLoadPackage*)Init.InstallHook("LoadPackage", LoadPackage_target, LoadPackage_hook);
+		CHECK_RESOLVED(LoadPackage_orig);
+
+		// Package loading (Background)
+		// ---------------------------------------
+		auto const LoadPackageAsyncTick_target = Init.ResolveTyped<tLoadPackageAsyncTick>(BUILTIN_LOADPACKAGEASYNCTICK_RVA);
+		CHECK_RESOLVED(LoadPackageAsyncTick_target);
+		LoadPackageAsyncTick_orig = (tLoadPackageAsyncTick*)Init.InstallHook("LoadPackageAsyncTick", LoadPackageAsyncTick_target, LoadPackageAsyncTick_hook);
+		CHECK_RESOLVED(LoadPackageAsyncTick_orig);
+
+
+
 		/*
 		// UObject::ProcessEvent hook for UnrealScript Activated() logging
 		// ----------------------------------------
@@ -156,6 +172,22 @@ namespace DebugLogger
 			logger.flush();
 		}*/
 		return object;
+	}
+
+	tLoadPackage* LoadPackage_orig = nullptr;
+	UPackage* LoadPackage_hook(UPackage* outer, wchar_t* packageName, ELoadFlags loadFlags)
+	{
+		LEASI_INFO(L"Loading package synchronously: {}", packageName);
+		return LoadPackage_orig(outer, packageName, loadFlags);
+	}
+
+	tLoadPackageAsyncTick* LoadPackageAsyncTick_orig = nullptr;
+	UINT LoadPackageAsyncTick_hook(UnLinker* linker, int a2, float a3)
+	{
+		// Logger writes after the call cause linker might be null to start with, it's populated when tick begins
+		auto result = LoadPackageAsyncTick_orig(linker, a2, a3);
+		LEASI_INFO(L"Loading package asynchronously: {}, {:2f}%", linker->PackageName, linker->EstimatedLoadPercentage);
+		return result;
 	}
 
 	// ! UObject::ProcessEvent hook
