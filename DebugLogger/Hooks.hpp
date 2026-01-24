@@ -98,7 +98,18 @@ namespace DebugLogger
 	extern tLoadPackageAsyncTick* LoadPackageAsyncTick_orig;
 	UINT LoadPackageAsyncTick_hook(UnLinker* linker, int a2, float a3);
 
-
+	using tStaticAllocateObject = UObject*(
+		UClass* objectClass, // What class of object is being instantiated?
+		UObject* inObject, // The 'Outer' of the object will be set to this 
+		SFXName a3, // Name of object?
+		long long loadFlags,
+		void* a5, // often 0
+		void* errorDevice, //Often GError
+		const wchar_t* a7, // Often 0
+		void* a8, // Often 0
+		void* a9); // Often 0
+	extern tStaticAllocateObject* StaticAllocateObject_orig;
+	tStaticAllocateObject StaticAllocateObject_hook;
 
 
 

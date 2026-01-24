@@ -3,6 +3,8 @@
 #include "DebugLogger/LE1Hooks.hpp"
 #include "DebugLogger/LE2Hooks.hpp"
 #include "DebugLogger/LE3Hooks.hpp"
+#include <thread>
+#include <chrono>
 
 namespace DebugLogger
 {
@@ -188,6 +190,47 @@ namespace DebugLogger
 		auto result = LoadPackageAsyncTick_orig(linker, a2, a3);
 		LEASI_INFO(L"Loading package asynchronously: {}, {:2f}%", linker->PackageName, linker->EstimatedLoadPercentage);
 		return result;
+	}
+
+	void logAllocationFailure(UClass* instancingClass, UObject* outer, SFXName objClassName, UObject* archetype) {
+		auto instancingClassName = instancingClass ? instancingClass->GetFullName() : nullptr;
+		auto outerName = outer ? outer->GetFullName() : nullptr;
+		auto objectName = objClassName.GetName();
+		auto archetypeName = archetype ? archetype->GetFullName() : nullptr;
+		LEASI_CRIT(L"ERROR ALLOCATING OBJECT! Some information that may help track down the problem:");
+		LEASI_CRIT("\tInstancing class name: {}", instancingClassName);
+		LEASI_CRIT("\tOuter ('Link' in modding tools): {}", outerName);
+		LEASI_CRIT("\tName of object being created: {}", objectName);
+		LEASI_CRIT(L"\tArchetype: {}", archetypeName);
+		LEASI_WARN(L"DebugLogger: Terminating application due to crash in StaticAllocateObject(). See the DebugLogger log file.\n", true);
+		LEASI_FLUSH();
+	}
+
+	tStaticAllocateObject* StaticAllocateObject_orig = nullptr;
+	UObject* StaticAllocateObject_hook(
+		UClass* instancingClass,
+		UObject* outer,
+		SFXName objClassName,
+		long long loadFlags,
+		UObject* archetype,
+		void* errorDev, // FOutputDevice
+		const wchar_t* a7, // Ghidra shows this is pretty commonly 0
+		void* instancePtr, // Ghidra shows this is pretty commonly 0
+		void* a9) // Ghidra shows this is pretty commonly 0
+	{
+		__try {
+			return StaticAllocateObject_orig(instancingClass, outer, objClassName, loadFlags, archetype, errorDev, a7, instancePtr, a9);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			// We failed to allocate an object
+			// Game's gonna die. Let's log it
+
+			// This has to be in a different function since it needs unwound and
+			// that can't be done in __try __except
+			logAllocationFailure(instancingClass, outer, objClassName, archetype);
+			std::this_thread::sleep_for(std::chrono::seconds(8));
+			exit(1);
+		}
 	}
 
 	// ! UObject::ProcessEvent hook
