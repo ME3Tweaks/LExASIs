@@ -300,11 +300,10 @@ namespace DebugLogger
 
 #pragma region FOutputDevice::Logf
 	tFOutputDeviceLogf* FOutputDeviceLogf_orig = nullptr;
-	void FOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4) 
+	void FOutputDeviceLogf_hook(void* unknown, void* serializationFuncPtr, wchar_t* format_str, void* param1, void* param2, void* param3, void* param4)
 	{
-		auto strAsAnsi = (char*)formatStr;
-		LEASI_UNUSED_2(outputDevice, strAsAnsi);
-		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
+		LEASI_UNUSED_2(unknown, serializationFuncPtr);
+		auto logMessage = FString::Printf(format_str, param1, param2, param3, param4);
 		LEASI_INFO(L"appLogf: {}", logMessage);
 	}
 
