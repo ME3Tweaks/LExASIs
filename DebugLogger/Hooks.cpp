@@ -311,9 +311,9 @@ namespace DebugLogger
 
 #pragma region FErrorOutputDevice::Logf
 	tFOutputDeviceErrorLogf* FErrorOutputDeviceLogf_orig = nullptr;
-	void FErrorOutputDeviceLogf_hook(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4)
+	void FErrorOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4)
 	{
-		LEASI_UNUSED_2(outputDevice, code);
+		LEASI_UNUSED(outputDevice);
 		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
 		LEASI_ERROR(L"appLogErrorf: {}", logMessage);
 	}

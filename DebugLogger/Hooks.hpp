@@ -133,7 +133,7 @@ namespace DebugLogger
 	// LogErrorF
 	using tFOutputDeviceErrorLogf = void(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
 	extern tFOutputDeviceErrorLogf* FErrorOutputDeviceLogf_orig;
-	void FErrorOutputDeviceLogf_hook(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
+	void FErrorOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
 
 
     // ! UObject::ProcessEvent hook for logging UnrealScript Activated() calls.
