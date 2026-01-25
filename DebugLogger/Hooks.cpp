@@ -105,6 +105,7 @@ namespace DebugLogger
 		CHECK_RESOLVED(UObject_ProcessInternal_orig);
 		*/
 
+		InstallVerboseLoggerHooks(Init);
 		LEASI_INFO("Hooks initialized");
 	}
 
