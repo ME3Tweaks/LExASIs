@@ -120,9 +120,20 @@ namespace DebugLogger
 		void* instancePtr, // Ghidra shows this is pretty commonly 0
 		void* a9) ;
 
+	// LogInternal
+	using tLogInternal = void(UObject* callingObject, FFrame* param2);
+	extern tLogInternal* LogInternal_orig;
+	void LogInternal_hook(UObject* callingObject, FFrame* param2);
 
+	// LogF
+	using tFOutputDeviceLogf = void(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
+	extern tFOutputDeviceLogf* FOutputDeviceLogf_orig;
+	void FOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
 
-
+	// LogErrorF
+	using tFOutputDeviceErrorLogf = void(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
+	extern tFOutputDeviceErrorLogf* FErrorOutputDeviceLogf_orig;
+	void FErrorOutputDeviceLogf_hook(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
 
 
     // ! UObject::ProcessEvent hook for logging UnrealScript Activated() calls.

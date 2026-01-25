@@ -3,6 +3,7 @@
 #include "DebugLogger/LE1Hooks.hpp"
 #include "DebugLogger/LE2Hooks.hpp"
 #include "DebugLogger/LE3Hooks.hpp"
+#include "DebugLogger/VerboseLogger.hpp"
 #include <thread>
 #include <chrono>
 
@@ -11,7 +12,7 @@ namespace DebugLogger
 	// Variables
 	// ========================================
 
-	// If every export's creation should be logged for deep debugging. Requirse -debugexportcreation command line arg.
+	// If every export's creation should be logged for deep debugging. Requires -debugexportcreation command line arg.
 	bool bLogExportCreation = false;
 
 
@@ -59,6 +60,34 @@ namespace DebugLogger
 		CHECK_RESOLVED(StaticAllocateObject_target);
 		StaticAllocateObject_orig = (tStaticAllocateObject*)Init.InstallHook("StaticAllocateObject", StaticAllocateObject_target, StaticAllocateObject_hook);
 		CHECK_RESOLVED(StaticAllocateObject_orig);
+
+		// LogInternal - allows logging from UnrealScript
+		// ---------------------------------------
+		//INIT_FIND_PATTERN_POSTHOOK(LogInternal, /*"40 57 48 83 ec 40 48 c7 44 24 20 fe ff ff ff 48 89 5c 24 50 48 89 74 24 60 48 8b da 33 f6 48 89 74 24 28 48 89 74 24 30");
+		//INIT_HOOK_PATTERN(LogInternal);
+
+		auto const LogInternal_target = Init.ResolveTyped<tLogInternal>(BUILTIN_OBJECT_LOGINTERNAL_RVA);
+		CHECK_RESOLVED(LogInternal_target);
+		LogInternal_orig = (tLogInternal*)Init.InstallHook("LogInternal", LogInternal_target, LogInternal_hook);
+		CHECK_RESOLVED(LogInternal_orig);
+
+		// FErrorOutputDevice::Logf - for executable message logs
+		// ---------------------------------------
+		//INIT_FIND_PATTERN_POSTHOOK(FOutputDeviceLogf, /*48 8b c4 48 89*/ "50 10 4c 89 40 18 4c 89 48 20 56 48 83 ec 50 83 79 08 00 48 8b f1 0f 85 bf 00 00 00");
+		//INIT_HOOK_PATTERN(FOutputDeviceLogf);
+		auto const FOutputDeviceLogf_target = Init.ResolveTyped<tFOutputDeviceLogf>(BUILTIN_APPLOGF_RVA);
+		CHECK_RESOLVED(FOutputDeviceLogf_target);
+		FOutputDeviceLogf_orig = (tFOutputDeviceLogf*)Init.InstallHook("FOutputDeviceLogf", FOutputDeviceLogf_target, FOutputDeviceLogf_hook);
+		CHECK_RESOLVED(FOutputDeviceLogf_orig);
+
+		// FErrorOutputDeviceLogf - for executable error logging
+		// ---------------------------------------
+		//INIT_FIND_PATTERN_POSTHOOK(FErrorOutputDeviceLogf, /*"48 8b c4 48 89*/ "50 10 4c 89 40 18 4c 89 48 20 56 48 83 ec 50 83 79 08 00 48 8b f1");
+		//INIT_HOOK_PATTERN(FErrorOutputDeviceLogf);
+		auto const FErrorOutputDeviceLogf_target = Init.ResolveTyped<tFOutputDeviceErrorLogf>(BUILTIN_APPERRORLOGF_RVA);
+		CHECK_RESOLVED(FErrorOutputDeviceLogf_target);
+		FErrorOutputDeviceLogf_orig = (tFOutputDeviceErrorLogf*)Init.InstallHook("FErrorOutputDeviceLogf", FErrorOutputDeviceLogf_target, FErrorOutputDeviceLogf_hook);
+		CHECK_RESOLVED(FErrorOutputDeviceLogf_orig);
 
 		/*
 		// UObject::ProcessEvent hook for UnrealScript Activated() logging
@@ -242,10 +271,52 @@ namespace DebugLogger
 			// that can't be done in __try __except
 			logAllocationFailure(instancingClass, outer, objClassName, archetype);
 			std::this_thread::sleep_for(std::chrono::seconds(8));
-			exit(1);
+			// exit(1);
+			return nullptr;
 		}
 	}
 #pragma endregion
+
+#pragma region LogInternal
+	tLogInternal* LogInternal_orig = nullptr;
+	void LogInternal_hook(UObject* callingObject, FFrame* stackFrame)
+	{
+		// Get the string argument to the method.
+		BYTE* originalCodePointer = stackFrame->Code;
+		BYTE nativeIndex = *stackFrame->Code++;
+		FString stringArg;
+		UObject* sfObject = stackFrame->Object;
+		GNatives[nativeIndex](sfObject, stackFrame, &stringArg);
+
+		LEASI_INFO(L"LogInternal() from {}: {}", callingObject->GetFullName(), stringArg);
+
+		//restore the code pointer so LogInternal executes normally.
+		stackFrame->Code = originalCodePointer;
+		LogInternal_orig(callingObject, stackFrame);
+	}
+
+#pragma endregion LogInternal
+
+#pragma region FOutputDevice::Logf
+	tFOutputDeviceLogf* FOutputDeviceLogf_orig = nullptr;
+	void FOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4) 
+	{
+		LEASI_UNUSED(outputDevice);
+		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
+		LEASI_INFO(L"appLogf: {}", logMessage);
+	}
+
+#pragma endregion FOutputDevice::Logf
+
+#pragma region FErrorOutputDevice::Logf
+	tFOutputDeviceErrorLogf* FErrorOutputDeviceLogf_orig = nullptr;
+	void FErrorOutputDeviceLogf_hook(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4)
+	{
+		LEASI_UNUSED_2(outputDevice, code);
+		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
+		LEASI_ERROR(L"appLogErrorf: {}", logMessage);
+	}
+#pragma endregion FOutputDevice::Logf
 
 
 	// ! UObject::ProcessEvent hook
