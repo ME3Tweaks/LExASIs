@@ -6,6 +6,16 @@ namespace DebugLogger {
 #define VL_STRINGIFY_IMPL(x) #x
 #define VL_STRINGIFY(x) VL_STRINGIFY_IMPL(x)
 
+	// VerboseLogger RVAs
+
+#if defined(SDK_TARGET_LE1)
+
+#elif defined(SDK_TARGET_LE2)
+
+#elif defined(SDK_TARGET_LE3)
+
+#endif
+
 
 	// This is not in a header due to the use of the macros.
 #pragma region ScriptErrorVerboseLogger
