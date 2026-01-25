@@ -302,7 +302,8 @@ namespace DebugLogger
 	tFOutputDeviceLogf* FOutputDeviceLogf_orig = nullptr;
 	void FOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4) 
 	{
-		LEASI_UNUSED(outputDevice);
+		auto strAsAnsi = (char*)formatStr;
+		LEASI_UNUSED_2(outputDevice, strAsAnsi);
 		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
 		LEASI_INFO(L"appLogf: {}", logMessage);
 	}
