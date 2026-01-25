@@ -11,15 +11,22 @@ namespace Common
     static std::string _cachedGameName;
     static std::string _cachedLogBaseName;
 
+    // Removes the prefix of all logging.
     void RemoveLoggingPattern() {
         auto DefaultLogger = spdlog::default_logger();
         DefaultLogger->set_pattern(std::string("%v%$"));
     }
 
+    // Sets the default pattern of [DateStamp] (Logger name) Message
     void RestoreLoggingPattern() {
         auto DefaultLogger = spdlog::default_logger();
         DefaultLogger->set_pattern(std::string("%^[%H:%M:%S.%e %l] (") + _cachedGameName + _cachedLogBaseName + ") %v%$");
+    }
 
+    // Sets the logging pattern messages are formatted with
+    void SetLoggingPattern(std::string pattern) {
+        auto DefaultLogger = spdlog::default_logger();
+        DefaultLogger->set_pattern(pattern);
     }
 
     void SetupDefaultLogger(const char* gameName, const char* logBaseName) {
