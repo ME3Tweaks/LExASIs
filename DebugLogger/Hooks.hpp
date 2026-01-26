@@ -131,7 +131,7 @@ namespace DebugLogger
 	void FOutputDeviceLogf_hook(void* outputDevice, void* serializationFuncPtr, wchar_t* format_str, void* param1, void* param2, void* param3, void* param4);
 
 	// LogErrorF
-	using tFOutputDeviceErrorLogf = void(void* outputDevice, int* code, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
+	using tFOutputDeviceErrorLogf = void(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
 	extern tFOutputDeviceErrorLogf* FErrorOutputDeviceLogf_orig;
 	void FErrorOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4);
 
