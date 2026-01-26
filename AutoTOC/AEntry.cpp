@@ -21,10 +21,9 @@
 
 #pragma pack(1)
 
-#define LOGGING
+//#define LOGGING
 //#define PROFILING
-
-#include "AutoTOC/IniFile.hpp"
+#include "Common/Mount.hpp"
 
 using namespace std;
 
@@ -32,7 +31,7 @@ using namespace std;
 #define LOG(...) LEASI_INFO(__VA_ARGS__)
 #else
 // Nothing
-#define LOG(msg)
+#define LOG(...)
 #endif
 
 #ifdef PROFILING
@@ -50,7 +49,6 @@ SPI_PLUGINSIDE_SEQATTACH; // Should this be ASYNCATTACH instead?
 SPI_IMPLEMENT_ATTACH
 {
 	LEASI_UNUSED(InterfacePtr);
-//::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 #ifdef LOGGING
 	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A);
 #endif
@@ -70,124 +68,65 @@ SPI_IMPLEMENT_DETACH
 	return true;
 }
 
-#ifdef _USRDLL 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD  reason, LPVOID)
-{
-	TCHAR path[MAX_PATH];
-	GetModuleFileName(hModule, path, MAX_PATH);
-	if (reason == DLL_PROCESS_ATTACH)
-	{
-		AutoToc(path);
-#ifdef LOGGING
-		logFile.close();
-#endif
-	}
-
-	return TRUE;
-}
-#else
-//int main()
-//{
-//	TCHAR path[MAX_PATH];
-//	//exe version is only for testing purposes right now, so just hardcode the path to where the asi ought to go
-//	StringCchCopy(path, MAX_PATH, "D:\\SteamLibrary\\steamapps\\common\\Mass Effect Legendary Edition\\Game\\ME1\\Binaries\\Win64\\ASI\\AutoTOCasiLE.asi");
-//	AutoToc(path);
-//}
-#endif
-
-
-
 void AutoToc(TCHAR path[MAX_PATH])
 {
-
+	// Convert to std::filesystem::path for modern C++ path manipulation
 	std::filesystem::path fsPath(path);
-	fsPath = fsPath.parent_path();
-	StringCchCopy(path, MAX_PATH, fsPath.string().c_str());
-	//#if defined LOGGING || defined PROFILING
-	//	StringCchCat(path, MAX_PATH, "\\AutoTOC.log");
-	//	logFile.open(path);
-	//	logFile << "AutoTOC log:\n";
-	//	fsPath = std::filesystem::path(path).parent_path();
-	//	StringCchCopy(path, MAX_PATH, fsPath.string().c_str());
-	//#endif
+	
+	// Get the game base folder (two levels up from the initial path)
+	fsPath = fsPath.parent_path().parent_path().parent_path();
 
 #ifdef PROFILING
-	logFile << "PROFILING: Started\n\n";
+	LOG("PROFILING: Started");
 	startTime = std::chrono::high_resolution_clock::now();
 #endif
 
-	//get us to the game base folder
-	fsPath = std::filesystem::path(path).parent_path().parent_path();
-	StringCchCopy(path, MAX_PATH, fsPath.string().c_str());
-	size_t strLen;
-	StringCchLength(path, MAX_PATH, &strLen);
-
-	//switch (path[strLen - 1])
-	//{
-	//case '1':
-	//	Game = MEGame::LE1;
-	//	break;
-	//case '2':
-	//	Game = MEGame::LE2;
-	//	break;
-	//case '3':
-	//	Game = MEGame::LE3;
-	//	break;
-	//default:
-	//	const std::string message = "AutoTOC asi is unable to determine which Mass Effect game it is running in! This game path is unexpected:\n\n";
-	//	MessageBox(nullptr,
-	//		(message + path).c_str(),
-	//		"Mass Effect - ",
-	//		MB_OK | MB_ICONERROR);
-	//	exit(1);
-	//}
-
-
-	StringCchCat(path, MAX_PATH, "\\");
-
-
-	TCHAR baseDir[MAX_PATH];
-	StringCchCopy(baseDir, MAX_PATH, path);
-	TCHAR tocPath[MAX_PATH];
-	StringCchCopy(tocPath, MAX_PATH, path);
-	StringCchCat(tocPath, MAX_PATH, "BioGame\\PCConsoleTOC.bin");
+	// Process basegame TOC
+	const std::filesystem::path baseGamePath = fsPath;
+	const std::filesystem::path tocPath = baseGamePath / "BioGame" / "PCConsoleTOC.bin";
+	
 	LOG("writing basegame toc...");
-	writeTOC(tocPath, baseDir, false);
+	
+	// Convert paths to TCHAR arrays for writeTOC (which still uses TCHAR*)
+	TCHAR baseDirBuffer[MAX_PATH];
+	TCHAR tocPathBuffer[MAX_PATH];
+	StringCchCopy(baseDirBuffer, MAX_PATH, baseGamePath.string().c_str());
+	StringCchCopy(tocPathBuffer, MAX_PATH, tocPath.string().c_str());
+	
+	writeTOC(tocPathBuffer, baseDirBuffer, false);
 
 	LOG_DURATION("finished basegame TOC");
 
 #if defined SDK_TARGET_LE2 || defined SDK_TARGET_LE3
 	LOG("TOCing dlc:");
-	StringCchCat(path, MAX_PATH, "BioGame\\DLC\\");
+	
+	const std::filesystem::path dlcPath = fsPath / "BioGame" / "DLC";
 
-	if (std::filesystem::is_directory(path))
+	if (std::filesystem::is_directory(dlcPath))
 	{
-		StringCchCopy(baseDir, MAX_PATH, path);
-
-		WIN32_FIND_DATA fd;
-		HANDLE hFind = INVALID_HANDLE_VALUE;
-		TCHAR enumeratePath[MAX_PATH];
-		StringCchCopy(enumeratePath, MAX_PATH, path);
-		StringCchCat(enumeratePath, MAX_PATH, "*");
-		hFind = FindFirstFile(enumeratePath, &fd);
-		do
+		// Use C++ directory iteration instead of Windows API
+		for (const auto& entry : std::filesystem::directory_iterator(dlcPath))
 		{
-			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			if (entry.is_directory())
 			{
-				// 0 means true for lstrcmp
-				if (strlen(fd.cFileName) > 3 && fd.cFileName[0] == L'D' && fd.cFileName[1] == L'L' && fd.cFileName[2] == L'C')
+				const std::string dirName = entry.path().filename().string();
+				
+				// Check if directory name starts with "DLC_"
+				if (dirName.length() > 4 && dirName.substr(0, 4) == "DLC_")
 				{
-					LOG("writing toc for {}", fd.cFileName);
-					StringCchCopy(baseDir, MAX_PATH, path);
-					StringCchCat(baseDir, MAX_PATH, fd.cFileName);
-					StringCchCat(baseDir, MAX_PATH, "\\");
-					StringCchCopy(tocPath, MAX_PATH, baseDir);
-					StringCchCat(tocPath, MAX_PATH, "PCConsoleTOC.bin");
-					writeTOC(tocPath, baseDir, true);
+					LOG("writing toc for {}", dirName);
+					
+					const std::filesystem::path dlcBaseDir = entry.path();
+					const std::filesystem::path dlcTocPath = dlcBaseDir / "PCConsoleTOC.bin";
+					
+					// Convert paths to TCHAR arrays for writeTOC
+					StringCchCopy(baseDirBuffer, MAX_PATH, (dlcBaseDir.string() + "\\").c_str());
+					StringCchCopy(tocPathBuffer, MAX_PATH, dlcTocPath.string().c_str());
+					
+					writeTOC(tocPathBuffer, baseDirBuffer, true);
 				}
 			}
-		} while (FindNextFile(hFind, &fd) != 0);
-		FindClose(hFind);
+		}
 	}
 	else
 	{
@@ -475,144 +414,120 @@ void getFiles(vector<fileData>& files, TCHAR* basepath, TCHAR* searchPath) {
 	FindClose(hFind);
 }
 
-void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitiveCmp>& fileMap, TCHAR* basepath, TCHAR* searchPath)
+void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitiveCmp>& fileMap, const std::filesystem::path& basepath, const std::string& searchPath)
 {
-	WIN32_FIND_DATA fd;
-	LARGE_INTEGER fileSize;
-	TCHAR enumeratePath[MAX_PATH];
-	TCHAR tmpPath[MAX_PATH];
-	StringCchCopy(enumeratePath, MAX_PATH, basepath);
-	StringCchCat(enumeratePath, MAX_PATH, searchPath);
-	StringCchCat(enumeratePath, MAX_PATH, "*");
+	const std::filesystem::path enumeratePath = basepath / searchPath;
 
-	LOG("enumerating files: {}", enumeratePath);
-	HANDLE hFind = FindFirstFile(enumeratePath, &fd);
-	do
+	LOG("enumerating files: {}", enumeratePath.string());
+
+	if (!std::filesystem::exists(enumeratePath))
 	{
-		StringCchCopy(tmpPath, MAX_PATH, searchPath);
-		StringCchCat(tmpPath, MAX_PATH, fd.cFileName);
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-		{
-			// 0 means true for lstrcmp
-			if (lstrcmp(fd.cFileName, "DLC") != 0 &&
-				lstrcmp(fd.cFileName, "Patches") != 0 &&
-				lstrcmp(fd.cFileName, "Splash") != 0 &&
-				lstrcmp(fd.cFileName, "Config") != 0 &&
-				lstrcmp(fd.cFileName, ".") != 0 &&
-				lstrcmp(fd.cFileName, "..") != 0)
-			{
-				LOG("getting files from Directory: {}", fd.cFileName);
-				StringCchCat(tmpPath, MAX_PATH, "\\");
-				addToMap(fileMap, basepath, tmpPath);
-			}
+		return;
+	}
 
-		}
-		else
+	for (const auto& entry : std::filesystem::directory_iterator(enumeratePath))
+	{
+		const std::string filename = entry.path().filename().string();
+		const std::string relativePath = searchPath + filename;
+
+		if (entry.is_directory())
 		{
-			//allowed = { "*.pcc", "*.afc", "*.bik", "*.bin", "*.tlk", "*.txt", "*.cnd", "*.upk", "*.tfc", "*.isb", "*.usf" }
-			std::filesystem::path fsTmpPath2(tmpPath);
-			std::string ext = fsTmpPath2.extension().string();
+			// Skip excluded directories
+			if (filename != "DLC" &&
+				filename != "Patches" &&
+				filename != "Splash" &&
+				filename != "Config")
+			{
+				LOG("getting files from Directory: {}", filename);
+				addToMap(fileMap, basepath, relativePath + "\\");
+			}
+		}
+		else if (entry.is_regular_file())
+		{
+			const std::string ext = entry.path().extension().string();
 			if (isTocableExtension(ext))
 			{
-				fileSize.HighPart = fd.nFileSizeHigh;
-				fileSize.LowPart = fd.nFileSizeLow;
-				string fileName = tmpPath;
-				LOG("found file: {}\t{}", fileName, fileName.size());
-				fileMap[fd.cFileName] = std::make_pair(fileName, int(fileSize.QuadPart));
+				const int fileSize = static_cast<int>(std::filesystem::file_size(entry));
+				LOG("found file: {}\t{}", relativePath, relativePath.size());
+				fileMap[filename] = std::make_pair(relativePath, fileSize);
 			}
-
 		}
-	} while (FindNextFile(hFind, &fd) != 0);
-	FindClose(hFind);
+	}
 }
 
 void getLE1Files(vector<fileData>& files, TCHAR* basepath)
 {
 	std::map<int, std::string> dlcMount;
-	map<int, std::string> dlcFriendlyNames;
-	TCHAR enumeratePath[MAX_PATH];
-	TCHAR dlcPath[MAX_PATH];
-	WIN32_FIND_DATA fd;
-	TCHAR tmpPath[MAX_PATH];
+	// std::map<int, std::string> dlcFriendlyNames;
 	std::map<std::string, std::pair<std::string, int>, caseInsensitiveCmp> fileMap;
 	bool dlcFound = false;
 
-	StringCchCopy(dlcPath, MAX_PATH, basepath);
-	StringCchCat(dlcPath, MAX_PATH, "BioGame\\DLC\\");
-	StringCchCopy(enumeratePath, MAX_PATH, dlcPath);
-	StringCchCat(enumeratePath, MAX_PATH, "*");
+	std::filesystem::path dlcPath = std::filesystem::path(basepath) / "BioGame" / "DLC";
 
 	LOG("finding LE1 DLCs...");
-	HANDLE hFind = FindFirstFile(enumeratePath, &fd);
-	do
+	if (std::filesystem::exists(dlcPath) && std::filesystem::is_directory(dlcPath))
 	{
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY && strlen(fd.cFileName) > 4
-			&& fd.cFileName[0] == L'D' && fd.cFileName[1] == L'L' && fd.cFileName[2] == L'C' && fd.cFileName[3] == L'_')
+		for (const auto& entry : std::filesystem::directory_iterator(dlcPath))
 		{
-			StringCchCopy(tmpPath, MAX_PATH, dlcPath);
-			StringCchCat(tmpPath, MAX_PATH, fd.cFileName);
-			StringCchCat(tmpPath, MAX_PATH, "\\AutoLoad.ini");
-			const auto fileAttributes = GetFileAttributes(tmpPath);
-			if (fileAttributes != INVALID_FILE_ATTRIBUTES)
+			if (entry.is_directory())
 			{
-				const string iniPath(tmpPath);
-				IniFile autoLoad(iniPath);
-				auto strMount = autoLoad.readValue("ME1DLCMOUNT", "ModMount");
-				if (!strMount.empty())
+				const std::string dirName = entry.path().filename().string();
+				if (dirName.length() > 8 && dirName.substr(0, 8) == "DLC_MOD_")
 				{
-					int mount = 0;
-					try
-					{
-						mount = std::stoi(strMount);
-					}
-					catch (...)
-					{
-						mount = 0;
-					}
+					FString error;
+					int mount = Common::TryReadMountPriority(entry.path(), &error);
+					
 					if (mount > 0)
 					{
-						dlcMount[mount] = fd.cFileName;
-						dlcFriendlyNames[mount] = autoLoad.readValue("ME1DLCMOUNT", "ModName");
+						// Successfully read mount priority
+						// IniFile autoLoad((entry.path() / "AutoLoad.ini").string());
+						dlcMount[mount] = dirName;
 						dlcFound = true;
-						LOG("Registered {} ({}) at mount: {}", fd.cFileName, dlcFriendlyNames[mount], mount);
-						continue;
+						LOG("Registered {} at mount: {}", dirName, mount);
+					}
+					else if (std::filesystem::exists(entry.path() / "AutoLoad.ini"))
+					{
+						// AutoLoad.ini exists but failed to read mount priority
+						LOG("{} has an invalid AutoLoad.ini! exiting...", dirName);
+						std::wstring errorMsg = !error.Empty() ? error.Chars() : L"Unknown error";
+						std::wstring message = L" has an improperly formatted AutoLoad.ini! Try re-installing the mod. If that doesn't fix the problem, contact the mod author.\n\nError: ";
+						std::wstring fullMessage = std::wstring(dirName.begin(), dirName.end()) + message + errorMsg + L"\n\nMass Effect will now close.";
+						MessageBoxW(nullptr,
+							fullMessage.c_str(),
+							L"Mass Effect LE - Broken Mod Warning",
+							MB_OK | MB_ICONERROR);
+						exit(1);
+					}
+					else
+					{
+						LOG("{} does not have an AutoLoad.ini, skipping...", dirName);
 					}
 				}
-				LOG("{} has an invalid AutoLoad.ini! exiting...", fd.cFileName);
-				const std::string message = " has an improperly formatted AutoLoad.ini! Try re-installing the mod. If that doesn't fix the problem, contact the mod author.\n\nMass Effect will now close.";
-				MessageBox(nullptr,
-					(fd.cFileName + message).c_str(),
-					"Mass Effect LE - Broken Mod Warning",
-					MB_OK | MB_ICONERROR);
-				exit(1);
 			}
-			LOG("{} does not have an AutoLoad.ini, skipping...", fd.cFileName);
 		}
-	} while (FindNextFile(hFind, &fd) != 0);
-	FindClose(hFind);
+	}
 
 	if (!dlcFound)
 	{
 		LOG("No DLC found");
 	}
+
 	LOG("building file map...");
 
-	addToMap(fileMap, basepath, "BioGame\\");
-	addToMap(fileMap, basepath, "Engine\\");
+	const std::filesystem::path basepathFs(basepath);
+	addToMap(fileMap, basepathFs, "BioGame\\");
+	addToMap(fileMap, basepathFs, "Engine\\");
 
-	std::ofstream loadOrderTxt(string(dlcPath) + "LoadOrder.Txt");
+	std::ofstream loadOrderTxt(dlcPath.string() + "\\LoadOrder.Txt");
 	loadOrderTxt << "This is an auto-generated file for informational purposes only. Editing it will not change the load order.\n\n";
 	if (dlcFound)
 	{
-		for (auto&& pair : dlcMount)
+		for (const auto& [mount, dlcName] : dlcMount)
 		{
-			std::string dlcName = pair.second;
-			StringCchCopy(tmpPath, MAX_PATH, "BioGame\\DLC\\");
-			StringCchCat(tmpPath, MAX_PATH, dlcName.c_str());
-			StringCchCat(tmpPath, MAX_PATH, "\\");
-			addToMap(fileMap, basepath, tmpPath);
+			const std::string dlcSubPath = (std::filesystem::path("BioGame") / "DLC" / dlcName / "").string();
+			addToMap(fileMap, basepathFs, dlcSubPath);
 
-			loadOrderTxt << pair.first << ": " << dlcName << " (" << dlcFriendlyNames[pair.first] << ")" << std::endl;
+			loadOrderTxt << mount << ": " << dlcName << std::endl;
 		}
 	}
 	else
@@ -622,10 +537,11 @@ void getLE1Files(vector<fileData>& files, TCHAR* basepath)
 	loadOrderTxt.close();
 
 	LOG("LE1 TOC in text form:");
-	for (auto&& pair : fileMap)
+	for (const auto& [fileName, filePair] : fileMap)
 	{
-		LOG("{}    {}", pair.second.first, pair.second.second);
-		files.emplace_back(pair.second.first, pair.second.second, HashFileName(pair.first.c_str(), (int)pair.first.length()));
+		LOG("{}    {}", filePair.first, filePair.second);
+		files.emplace_back(filePair.first, filePair.second, HashFileName(fileName.c_str(), static_cast<int>(fileName.length())));
 	}
 }
+
 
