@@ -14,6 +14,8 @@ asi_target (DebugLogger
     "LE3Hooks.hpp"
     "VerboseLogger.hpp"
     "VerboseLogger.cpp"
+    "PropertyLogger.hpp"
+    "PropertyLogger.cpp"
     "SharedVersion.h"
     "DebugLogger.rc"
   VLINKS

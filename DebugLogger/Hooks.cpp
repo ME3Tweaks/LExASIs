@@ -317,7 +317,7 @@ namespace DebugLogger
 		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
 		LEASI_ERROR(L"appLogErrorf: {}", logMessage);
 	}
-#pragma endregion FOutputDevice::Logf
+#pragma endregion FErrorOutputDevice::Logf
 
 
 	// ! UObject::ProcessEvent hook

@@ -1,6 +1,7 @@
 #include "Common/Base.hpp"
 #include "Hooks.hpp"
 #include "DebugLogger/VerboseLogger.hpp"
+#include "DebugLogger/PropertyLogger.hpp"
 
 namespace DebugLogger {
 #define VL_STRINGIFY_IMPL(x) #x
@@ -66,9 +67,9 @@ namespace DebugLogger {
 		// 	logger.writeToLog(string_format("Error in '%s' on '%s' at %i (0x%X) bytes into the bytecode", funcOrStateFullPath.c_str(), thisFullPath, scriptOffset, scriptOffset), true, true);
 		LEASI_ERROR("Error in '{}' on '{}' at {} (0x{:X}) bytes into the bytecode", funcOrStateFullPath, thisFullPath, scriptOffset, scriptOffset);
 		LEASI_INFO("Values of arguments and locals:");
-		/*PropertyLogger propLogger;
+		PropertyLogger propLogger;
 		propLogger.PrintPropertyValues(stack->Locals, stack->Node, stack->OutParms);
-		LEASI_INFO(propLogger.GetString(), false, true);*/
+		LEASI_INFO(propLogger.GetString());
 	}
 
 	bool PatchMemory(const void* patch, const SIZE_T patchSize, void* patchLocation)
