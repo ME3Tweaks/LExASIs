@@ -25,6 +25,7 @@ namespace LEXInterop
     {
         if (Actor && !Common::IsDestroyed(Actor))
         {
+            ScopedMoveActorEnable moveable;
             Actor->SetDrawScale3D(ScaleVector);
         }
     }
@@ -33,6 +34,7 @@ namespace LEXInterop
     {
         if (Actor && !Common::IsDestroyed(Actor))
         {
+            ScopedMoveActorEnable moveable;
             Actor->SetDrawScale(Scale);
         }
     }
@@ -41,6 +43,7 @@ namespace LEXInterop
     {
         if (Actor && !Common::IsDestroyed(Actor))
         {
+            ScopedMoveActorEnable moveable;
             Actor->SetRotation(Rotation);
         }
     }

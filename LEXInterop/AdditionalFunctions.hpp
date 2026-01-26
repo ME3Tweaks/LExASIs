@@ -3,6 +3,7 @@
 #include <LESDK/Headers.hpp>
 #include "Common/Base.hpp"
 #include "Common/Objects.hpp"
+#include "Utilities.hpp"
 
 
 namespace LEXInterop 
@@ -66,6 +67,25 @@ namespace LEXInterop
 		Marked = 0x0800000000000000,   // Marked (for debugging).
 		ErrorShutdown = 0x1000000000000000, // ShutdownAfterError called.
 		PendingKill = 0x2000000000000000 // Object is pending destruction
+	};
+
+
+	extern void* moveActorMoveableCheckAddr;
+
+	class ScopedMoveActorEnable
+	{
+		BYTE originalByte[1];
+    public:
+		ScopedMoveActorEnable()
+		{
+			originalByte[0] = ((BYTE*)moveActorMoveableCheckAddr)[0];
+			constexpr BYTE jumpZero[] = { 0x0 }; // set JNZ to "jump" zero bytes
+			PatchMemory(moveActorMoveableCheckAddr, jumpZero, 1);
+		}
+		~ScopedMoveActorEnable()
+		{
+			PatchMemory(moveActorMoveableCheckAddr, originalByte, 1);
+		}
 	};
 
 	// Typedefs
