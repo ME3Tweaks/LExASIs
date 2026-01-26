@@ -4,8 +4,6 @@ asi_target (AutoTOC
   SOURCES
     "AEntry.cpp"
     "AEntry.hpp"
-    "IniFile.cpp"
-    "IniFile.hpp"
     "SharedVersion.h"
     "AutoTOC.rc"
   VLINKS
