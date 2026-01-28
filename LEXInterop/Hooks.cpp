@@ -7,6 +7,7 @@
 #include "AssetViewer.hpp"
 #include "FileLoader.hpp"
 #include "LiveLevelEditor/LiveLevelEditorActions.hpp"
+#include "ScriptDebugger/ScriptDebugger.hpp"
 
 namespace LEXInterop
 {
@@ -71,5 +72,15 @@ namespace LEXInterop
         }
 
         SetLinker_orig(Context, Linker, LinkerIndex);
+    }
+
+    t_GameEngineTick* GameEngineTick_orig = nullptr;
+
+    void GameEngineTick_hook(UGameEngine* Context, float deltaSeconds)
+    {
+        // Process pending debugger attach/detach
+        ScriptDebugger::ProcessPendingState();
+
+        GameEngineTick_orig(Context, deltaSeconds);
     }
 }

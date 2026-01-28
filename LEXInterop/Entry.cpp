@@ -4,6 +4,7 @@
 #include "LEXInterop/Pipe.hpp"
 #include "LEXInterop/FileLoader.hpp"
 #include "LEXInterop/AdditionalFunctions.hpp"
+#include "LEXInterop/ScriptDebugger/ScriptDebugger.hpp"
 #include "LEXInterop/SharedVersion.h"
 
 SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
@@ -21,6 +22,7 @@ SPI_IMPLEMENT_ATTACH
     ::LEXInterop::FileLoader::InitializePackagePrecacheMap(Init);
     ::LEXInterop::InitializeHooks(Init);
     ::LEXInterop::InitializeAdditionalFunctions(Init);
+    ::LEXInterop::ScriptDebugger::Initialize(Init);
     ::LEXInterop::StartPipeThread();
 
     LEASI_INFO("LEXInterop initialized");
@@ -84,6 +86,12 @@ namespace LEXInterop
         CHECK_RESOLVED(SetLinker_target);
         SetLinker_orig = reinterpret_cast<t_SetLinker*>(Init.InstallHook("SetLinker", SetLinker_target, SetLinker_hook));
         CHECK_RESOLVED(SetLinker_orig);
+
+        // GameEngineTick hook 
+        auto const GameEngineTick_target = Init.ResolveTyped<t_GameEngineTick>(BUILTIN_GAMEENGINETICK_RVA);
+        CHECK_RESOLVED(GameEngineTick_target);
+        GameEngineTick_orig = reinterpret_cast<t_GameEngineTick*>(Init.InstallHook("GameEngineTick", GameEngineTick_target, GameEngineTick_hook));
+        CHECK_RESOLVED(GameEngineTick_orig);
 
         LEASI_INFO("Hooks initialized");
     }
