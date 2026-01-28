@@ -47,10 +47,16 @@ namespace Common
         ConsoleSink->set_color(spdlog::level::info, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
         DefaultLogger->sinks().push_back(std::move(ConsoleSink));
 #endif
+        try {
+            auto FileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Logs/" + std::string(logBaseName) + ".log", true);
+            FileSink->set_level(spdlog::level::trace);
+            DefaultLogger->sinks().push_back(std::move(FileSink));
+        }
+        catch (const spdlog::spdlog_ex& ex)
+        {
+            LEASI_ERROR("Log init failed: {}", ex.what());
+        }
 
-        auto FileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(std::string(logBaseName) + ".log", true);
-        FileSink->set_level(spdlog::level::trace);
-        DefaultLogger->sinks().push_back(std::move(FileSink));
         DefaultLogger->set_level(spdlog::level::info);
         RestoreLoggingPattern(); // Sets the default pattern
 
