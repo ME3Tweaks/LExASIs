@@ -20,4 +20,8 @@ namespace LEXInterop
     using t_SetLinker = void(UObject* Context, ULinkerLoad* Linker, int LinkerIndex);
     extern t_SetLinker* SetLinker_orig;
     void SetLinker_hook(UObject* Context, ULinkerLoad* Linker, int LinkerIndex);
+
+    using t_GameEngineTick = void(UGameEngine* Context, float deltaSeconds);
+    extern t_GameEngineTick* GameEngineTick_orig;
+    void GameEngineTick_hook(UGameEngine* Context, float deltaSeconds);
 }

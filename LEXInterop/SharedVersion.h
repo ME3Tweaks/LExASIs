@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"LEXInterop"
 
 
-#define ASI_VERSION 9
+#define ASI_VERSION 10
 #define ASI_DESCRIPTION "LEX Interop allows Legendary Explorer to control the game for use with development tools."
 
 

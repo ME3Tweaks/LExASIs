@@ -14,7 +14,8 @@ namespace Common
     inline bool IsDestroyed(UObject* obj)
     {
         static constexpr QWORD RF_FinishDestroyed = 0x0000000000010000;
-        return (obj->ObjectFlags & RF_FinishDestroyed) != 0;
+        static constexpr QWORD RF_PendingKill = 0x2000000000000000;
+        return (obj->ObjectFlags & (RF_FinishDestroyed | RF_PendingKill)) != 0;
     }
 
     /// @brief      Unreal-style iterator filtering objects by a specific type.
