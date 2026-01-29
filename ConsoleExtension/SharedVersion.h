@@ -13,7 +13,7 @@
 #define ASI_NAME_NO_SPACE_A "ConsoleExtension"
 #define ASI_NAME_NO_SPACE_W L"ConsoleExtension"
 
-#define ASI_VERSION 2
+#define ASI_VERSION 3
 #define ASI_DESCRIPTION "Console Extension adds new console commands to the game."
 
 
