@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"LinkerPrinter"
 
 
-#define ASI_VERSION 3
+#define ASI_VERSION 5
 #define ASI_DESCRIPTION "Linker Printer records what file an object is loaded from and can dump it to a log file via a keyboard command."
 
 

@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"StreamingLevelsHUD"
 
 
-#define ASI_VERSION 4
+#define ASI_VERSION 5
 #define ASI_DESCRIPTION "Streaming Levels HUD shows current level streaming information screen, as well as current memory usage and the last touched BioTriggerStream."
 
 

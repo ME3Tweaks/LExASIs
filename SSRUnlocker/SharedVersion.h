@@ -6,8 +6,8 @@
 // Todo: Move to a single version file for all asis
 #define CURRENT_YEAR "2026"
 
-#define DEVELOPER_A "d00telemental"
-#define DEVELOPER_W L"d00telemental"
+#define DEVELOPER_A "ME3Tweaks"
+#define DEVELOPER_W L"ME3Tweaks"
 #define ASI_NAME_A "SSR Unlocker"
 #define ASI_NAME_W L"SSR Unlocker"
 #define ASI_NAME_NO_SPACE_A "SSRUnlocker"
@@ -20,20 +20,20 @@
 // === Identification from automated ME3Tweaks tooling ====
 #if defined(SDK_TARGET_LE1)
 #define GAME_PREFIX_RC    "LE1"
-#define ASI_GROUP_ID_RC 0
+#define ASI_GROUP_ID_RC 51
 #define ASI_GAME_ID_RC 4
 #endif
 
 // These are not implemented
 #if defined(SDK_TARGET_LE2)
 #define GAME_PREFIX_RC    "LE2"
-#define ASI_GROUP_ID_RC 0
+#define ASI_GROUP_ID_RC 52 // RESERVED
 #define ASI_GAME_ID_RC 5
 #endif
 
 #if defined(SDK_TARGET_LE3)
 #define GAME_PREFIX_RC    "LE3"
-#define ASI_GROUP_ID_RC 0
+#define ASI_GROUP_ID_RC 53 // RESERVED
 #define ASI_GAME_ID_RC 6
 #endif
 
