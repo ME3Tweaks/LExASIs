@@ -54,7 +54,7 @@ namespace Common
         }
         catch (const spdlog::spdlog_ex& ex)
         {
-            LEASI_ERROR("Log init failed: {}", ex.what());
+            LEASI_ERROR("File log init failed: {}", ex.what());
         }
 
         DefaultLogger->set_level(spdlog::level::info);
