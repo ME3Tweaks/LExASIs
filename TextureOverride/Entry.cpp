@@ -17,10 +17,7 @@ SPI_IMPLEMENT_ATTACH
     ::TextureOverride::InitializeGlobals(Init);
     ::TextureOverride::InitializeHooks(Init);
     ::TextureOverride::InitializeArgs();
-
-    LEASI_INFO("hello there, {}!", SDK_TARGET_NAME_A "TextureOverride");
     ::TextureOverride::LoadDlcManifests();
-
     return true;
 }
 
