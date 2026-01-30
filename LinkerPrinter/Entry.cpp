@@ -5,7 +5,7 @@
 #include "Common/Base.hpp"
 
 #include <spdlog/spdlog.h>
-#include "KismetLogger/SharedVersion.h"
+#include "LinkerPrinter/SharedVersion.h"
 
 // ! SPI metadata
 // ========================================
@@ -86,7 +86,13 @@ SPI_IMPLEMENT_DETACH
 	{
 		::LinkerPrinter::FileLogger->flush();
 		::LinkerPrinter::FileLogger.reset();
-		spdlog::drop(ASI_NAME_NO_SPACE_A);
+		try {
+			spdlog::drop(ASI_NAME_NO_SPACE_A);
+
+		} catch (int errorCode) {
+			LEASI_UNUSED(errorCode);
+			// We can't do anything. Just swallow it
+		}
 	}
 
 	::LESDK::TerminateConsole();

@@ -9,6 +9,9 @@
 
 namespace LinkerPrinter
 {
+	// How many UI times viewport draw calls occur before we allow printing linkers.
+	int eventCountUntilPrint = -1;
+
 	// ! SetLinker hook
 	// ========================================
 
@@ -25,6 +28,22 @@ namespace LinkerPrinter
 		SetLinker_orig(Context, Linker, LinkerIndex);
 	}
 
+	void DrawDirectionsText(UCanvas* Canvas) {
+		int const Width = Canvas->SizeX;
+		static FColor   s_profileColorMain{ 0xff, 0xff, 0xff, 0xff };
+
+		Canvas->CurX = (Width / 3.0f) * 2;
+		Canvas->CurY = 20; // 5 is used by 2DA printer.
+		Canvas->DrawColor = s_profileColorMain;
+		if (eventCountUntilPrint >= 0) {
+			Canvas->DrawTextScaled(FString::Printf(L"Printing %i linkers to log...", NodePathToFileNameMap.size()), 1.f, 1.f);
+		}
+		else {
+			Canvas->DrawTextScaled(FString::Printf(L"Press CTRL + O to print linkers to log"), 1.f, 1.f);
+		}
+	}
+
+
 	// ! UObject::ProcessEvent hook
 	// ========================================
 
@@ -32,15 +51,33 @@ namespace LinkerPrinter
 
 	void UObject_ProcessEvent_hook(UObject* Context, UFunction* Function, void* Parms, void* Result)
 	{
+		// This goes before key reading as order of execution matters for next frame calc
+		if (CanPrint && Function->GetFullName().Equals(L"Function SFXGame.BioHUD.PostRender")) {
+			auto postRenderParams = static_cast<ABioHUD*>(Context);
+			DrawDirectionsText(postRenderParams->Canvas);
+		}
+
 		// Changed to subclasses of BioHUD to support custom debugger implementation classes of HUD
 		if (CanPrint && Function->GetFullName() == L"Function Engine.GameViewportClient.PostRender")
 		{
-			if ((GetKeyState('O') & 0x8000) && (GetKeyState(VK_CONTROL) & 0x8000))
+			if (eventCountUntilPrint == 0)
 			{
 				PrintLinkers();
 				LEASI_TRACE(L"Printed linkers to log");
+				eventCountUntilPrint = -1;
+			}
+			else if ((GetKeyState('O') & 0x8000) && (GetKeyState(VK_CONTROL) & 0x8000))
+			{
+				// Next frame draw the printing text
+				eventCountUntilPrint = 2;
+			}
+			else if (eventCountUntilPrint >= 0) {
+				eventCountUntilPrint--;
 			}
 		}
+
+
+
 
 		// Call original function
 		UObject_ProcessEvent_orig(Context, Function, Parms, Result);
