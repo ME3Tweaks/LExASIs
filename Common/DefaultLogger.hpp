@@ -7,4 +7,6 @@ namespace Common {
 	void SetLoggingPattern(std::string);
 	// Sets up the default logger with console and file sinks and the default logging pattern
 	void SetupDefaultLogger(const char* gameName, const char* logBaseName);
+	// Shuts down the default logger, closing it out and flushing it.
+	void ShutdownLogger();
 }

@@ -51,7 +51,7 @@ namespace ConsoleExtension
 
 		// UObject::ProcessEvent hook for camera tracking
 		// ----------------------------------------
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
 		CHECK_RESOLVED(UObject_ProcessEvent_orig);
@@ -59,7 +59,7 @@ namespace ConsoleExtension
 #ifdef SDK_TARGET_LE3
 		// StaticConstructObject for LE3
 		// ----------------------------------------
-		StaticConstructObject = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_PHOOK);
+		StaticConstructObject = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_RVA);
 		CHECK_RESOLVED(StaticConstructObject);
 #endif
 

@@ -49,11 +49,17 @@ SPI_IMPLEMENT_DETACH
 	//::SeqActLogEnabler::OnScreenLogger.reset();
 
 	// Flush and release file logger
-	if (::SeqActLogEnabler::FileLogger)
-	{
-		::SeqActLogEnabler::FileLogger->flush();
-		::SeqActLogEnabler::FileLogger.reset();
-		spdlog::drop(loggerName);
+	try {
+		if (::SeqActLogEnabler::FileLogger)
+		{
+			::SeqActLogEnabler::FileLogger->flush();
+			::SeqActLogEnabler::FileLogger.reset();
+			spdlog::drop(loggerName);
+		}
+	}
+	catch (int code) {
+		// Do nothing
+		LEASI_UNUSED(code);
 	}
 
 	::LESDK::TerminateConsole();
@@ -74,7 +80,7 @@ namespace SeqActLogEnabler
 	{
 		// UObject::ProcessEvent hook for SeqAct_Log and BioHUD.PostRender
 		// ----------------------------------------
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
 		CHECK_RESOLVED(UObject_ProcessEvent_orig);

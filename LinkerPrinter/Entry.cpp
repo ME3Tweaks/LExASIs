@@ -38,7 +38,7 @@ namespace LinkerPrinter
 		SetLinker_orig = (t_SetLinker*)Init.InstallHook("UObject::SetLinker", setLinkerTarget, SetLinker_hook);
 
 		// Install ProcessEvent hook
-		auto const processEventTarget = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const processEventTarget = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", processEventTarget, UObject_ProcessEvent_hook);
 	}
 }

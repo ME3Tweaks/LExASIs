@@ -40,16 +40,7 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
 	LEASI_UNUSED(InterfacePtr);
-
-	// Flush and release file logger
-	//if (::Bio2DAPrinter::FileLogger)
-	//{
-	//	::Bio2DAPrinter::FileLogger->flush();
-	//	::Bio2DAPrinter::FileLogger.reset();
-	//	spdlog::drop(loggerName);
-	//}
-
-	::LESDK::TerminateConsole();
+	::Common::ShutdownLogger();
 	return true;
 }
 
@@ -66,7 +57,7 @@ namespace Bio2DAPrinter
 	{
 		// UObject::ProcessEvent hook for 2DAPrinter keyboard events
 		// ----------------------------------------
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
 		CHECK_RESOLVED(UObject_ProcessEvent_orig);

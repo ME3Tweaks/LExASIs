@@ -9,16 +9,16 @@ void Common::InitializeLoggerDefault()
 
 void Common::InitializeRequiredGlobals(::LESDK::Initializer& Init)
 {
-    GMalloc = Init.ResolveTyped<FMallocLike*>(BUILTIN_GMALLOC_RIP);
+    GMalloc = Init.ResolveTyped<FMallocLike*>(BUILTIN_GMALLOC_RVA);
     CHECK_RESOLVED(GMalloc);
     
-    UObject::GObjObjects = Init.ResolveTyped<TArray<UObject*>>(BUILTIN_GOBOBJECTS_RIP);
+    UObject::GObjObjects = Init.ResolveTyped<TArray<UObject*>>(BUILTIN_GOBJECTS_RVA);
     CHECK_RESOLVED(UObject::GObjObjects);
     
-    SFXName::GBioNamePools = Init.ResolveTyped<SFXNameEntry const*>(BUILTIN_SFXNAMEPOOLS_RIP);
+    SFXName::GBioNamePools = Init.ResolveTyped<SFXNameEntry const*>(BUILTIN_SFXNAMEPOOLS_RVA);
     CHECK_RESOLVED(SFXName::GBioNamePools);
     
-    SFXName::GInitMethod = Init.ResolveTyped<SFXName::tInitMethod>(BUILTIN_SFXNAMEINIT_PHOOK);
+    SFXName::GInitMethod = Init.ResolveTyped<SFXName::tInitMethod>(BUILTIN_SFXNAMEINIT_RVA);
     CHECK_RESOLVED(SFXName::GInitMethod);
 }
 

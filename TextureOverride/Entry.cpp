@@ -24,9 +24,7 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
     LEASI_UNUSED(InterfacePtr);
-#ifdef _DEBUG
-    ::LESDK::TerminateConsole();
-#endif
+    ::Common::ShutdownLogger();
     return true;
 }
 

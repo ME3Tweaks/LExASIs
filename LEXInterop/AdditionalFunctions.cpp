@@ -12,7 +12,7 @@ namespace LEXInterop
 
 	void InitializeAdditionalFunctions(::LESDK::Initializer& Init)
 	{
-		static_construct_object = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_PHOOK);
+		static_construct_object = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_RVA);
 		CHECK_RESOLVED(static_construct_object);
 
 		FarMoveActor = Init.ResolveTyped<t_FarMoveActor>(BUILTIN_UWORLD_FARMOVEACTOR_RVA);

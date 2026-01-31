@@ -85,21 +85,21 @@ namespace ConvoSniffer
         // ----------------------------------------
 
         {
-            auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+            auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
             CHECK_RESOLVED(UObject_ProcessEvent_target);
             UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
             CHECK_RESOLVED(UObject_ProcessEvent_orig);
         }
 
         {
-            auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_PHOOK);
+            auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_RVA);
             CHECK_RESOLVED(UObject_ProcessInternal_target);
             UObject_ProcessInternal_orig = (t_UObject_ProcessInternal*)Init.InstallHook("UObject::ProcessInternal", UObject_ProcessInternal_target, UObject_ProcessInternal_hook);
             CHECK_RESOLVED(UObject_ProcessInternal_orig);
         }
 
         {
-            auto const UObject_CallFunction_target = Init.ResolveTyped<t_UObject_CallFunction>(BUILTIN_CALLFUNCTION_PHOOK);
+            auto const UObject_CallFunction_target = Init.ResolveTyped<t_UObject_CallFunction>(BUILTIN_CALLFUNCTION_RVA);
             CHECK_RESOLVED(UObject_CallFunction_target);
             UObject_CallFunction_orig = (t_UObject_CallFunction*)Init.InstallHook("UObject::CallFunction", UObject_CallFunction_target, UObject_CallFunction_hook);
             CHECK_RESOLVED(UObject_CallFunction_orig);

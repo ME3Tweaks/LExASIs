@@ -21,7 +21,7 @@ SPI_IMPLEMENT_ATTACH
 	}
 	try
 	{
-		::FunctionLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_A, outputType, ASI_NAME_A ".log");
+		::FunctionLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
@@ -40,11 +40,16 @@ SPI_IMPLEMENT_DETACH
 	LEASI_UNUSED(InterfacePtr);
 
 	// Flush and release file logger
-	if (::FunctionLogger::FileLogger)
-	{
-		::FunctionLogger::FileLogger->flush();
-		::FunctionLogger::FileLogger.reset();
-		spdlog::drop(ASI_NAME_A);
+	try {
+		if (::FunctionLogger::FileLogger)
+		{
+			::FunctionLogger::FileLogger->flush();
+			::FunctionLogger::FileLogger.reset();
+			spdlog::drop(ASI_NAME_A);
+		}
+	}
+	catch (...) {
+		// Do nothing
 	}
 
 	::LESDK::TerminateConsole();
@@ -65,14 +70,14 @@ namespace FunctionLogger
 	{
 		// UObject::ProcessEvent hook for UnrealScript function logging
 		// ----------------------------------------
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
 		CHECK_RESOLVED(UObject_ProcessEvent_orig);
 
 		// UObject::ProcessInternal hook for native function logging
 		// ----------------------------------------
-		auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_PHOOK);
+		auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_RVA);
 		CHECK_RESOLVED(UObject_ProcessInternal_target);
 		UObject_ProcessInternal_orig = (t_UObject_ProcessInternal*)Init.InstallHook("UObject::ProcessInternal", UObject_ProcessInternal_target, UObject_ProcessInternal_hook);
 		CHECK_RESOLVED(UObject_ProcessInternal_orig);

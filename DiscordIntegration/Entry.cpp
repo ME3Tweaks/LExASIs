@@ -29,16 +29,7 @@ SPI_IMPLEMENT_DETACH
 
 	delete ::DiscordIntegration::HookManager;
 	::DiscordIntegration::HookManager = nullptr;
-	/*
-	// Flush and release file logger
-	if (::DiscordIntegration::FileLogger)
-	{
-		::DiscordIntegration::FileLogger->flush();
-		::DiscordIntegration::FileLogger.reset();
-		spdlog::drop(ASI_NAME_NO_SPACE_A);*/
-		//}
-
-	::LESDK::TerminateConsole();
+	::Common::ShutdownLogger();
 	return true;
 }
 
@@ -52,7 +43,7 @@ namespace DiscordIntegration
 		Common::InitializeRequiredGlobals(*::DiscordIntegration::HookManager);
 
 		// Load GWorld
-		GWorld = ::DiscordIntegration::HookManager->ResolveTyped<UWorld*>(BUILTIN_GWORLD_RIP);
+		GWorld = ::DiscordIntegration::HookManager->ResolveTyped<UWorld*>(BUILTIN_GWORLD_RVA);
 		CHECK_RESOLVED(GWorld);
 
 		LEASI_INFO("globals initialized");

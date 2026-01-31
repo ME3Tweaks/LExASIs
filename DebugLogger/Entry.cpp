@@ -29,7 +29,7 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
 	LEASI_UNUSED(InterfacePtr);
-	::LESDK::TerminateConsole();
+	::Common::ShutdownLogger();
 	return true;
 }
 
@@ -40,20 +40,9 @@ namespace DebugLogger
 	{
 		Common::InitializeRequiredGlobals(Init);
 
-		// Uncomment these as needed.
-		//GEngine = Init.ResolveTyped<UEngine*>(BUILTIN_GENGINE_RIP);
-		//CHECK_RESOLVED(GEngine);
-
 		// Needed for LogInternal()
-		GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RIP);
+		GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RVA);
 		CHECK_RESOLVED(GNatives);
-		//GSys = Init.ResolveTyped<USystem*>(BUILTIN_GSYS_RIP);
-		//CHECK_RESOLVED(GSys);
-		//GWorld = Init.ResolveTyped<UWorld*>(BUILTIN_GWORLD_RIP);
-		//CHECK_RESOLVED(GWorld);
-		//GError = Init.ResolveTyped<void*>(BUILTIN_GERROR_RIP);
-		//CHECK_RESOLVED(GError);
-
 		LEASI_TRACE("Globals initialized");
 	}
 

@@ -1,8 +1,5 @@
-#include <spdlog/details/windows_include.h>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-
 #include "Common/Base.hpp"
+#include "Common/DefaultLogger.hpp"
 #include "Autoload/Entry.hpp"
 #include "Autoload/Hooks.hpp"
 #include "Autoload/DLCPackage.hpp"
@@ -16,7 +13,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 SPI_IMPLEMENT_ATTACH
 {
     ::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
-    ::Autoload::InitializeLogger();
+    ::Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A);
     ::Autoload::InitializeGlobals(Init);
     ::Autoload::InitializeHooks(Init);
     return true;
@@ -25,56 +22,13 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
     LEASI_UNUSED(InterfacePtr);
-#ifdef _DEBUG
-    ::LESDK::TerminateConsole();
-#endif
+    ::Common::ShutdownLogger();
     return true;
 }
 
 
 namespace Autoload
 {
-    void InitializeLogger()
-    {
-        auto DefaultLogger = spdlog::default_logger();
-        DefaultLogger->sinks().clear();
-
-#ifdef _DEBUG
-        ::LESDK::InitializeConsole();
-
-        auto ConsoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        ConsoleSink->set_level(spdlog::level::trace);
-        ConsoleSink->set_color(spdlog::level::trace, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-        ConsoleSink->set_color(spdlog::level::debug, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY);
-        ConsoleSink->set_color(spdlog::level::info, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
-        DefaultLogger->sinks().push_back(std::move(ConsoleSink));
-#endif
-
-        auto FileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(ASI_NAME_NO_SPACE_A ".log", true);
-        FileSink->set_level(spdlog::level::trace);
-        DefaultLogger->sinks().push_back(std::move(FileSink));
-
-        DefaultLogger->set_pattern("%^[%H:%M:%S.%e %l] (" SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A ") %v%$");
-        DefaultLogger->set_level(spdlog::level::info);
-
-#ifndef _DEBUG
-        // Check command line to see if we should turn on lower level logging
-        // This is so we can have more logging in release builds for users.
-        int numArgs;
-        auto args = CommandLineToArgvW(GetCommandLineW(), &numArgs);
-        for (int i = 0; i < numArgs; i++) {
-            if (wcscmp(args[i], L"-to-trace")) {
-                DefaultLogger->set_level(spdlog::level::trace);
-            }
-        }
-#else
-        DefaultLogger->set_level(spdlog::level::trace);
-#endif
-
-        spdlog::flush_on(spdlog::level::warn);
-        spdlog::flush_every(std::chrono::seconds(5));
-    }
-
     void InitializeGlobals(::LESDK::Initializer& Init)
     {
         Common::InitializeRequiredGlobals(Init);
@@ -123,7 +77,7 @@ namespace Autoload
         CHECK_RESOLVED(UGameEngine_Exec_orig);
 
 		// For rendering the profiler
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<tProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const UObject_ProcessEvent_target = Init.ResolveTyped<tProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		ProcessEvent_orig = (tProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, ProcessEvent_hook);
 		CHECK_RESOLVED(ProcessEvent_orig);

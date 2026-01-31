@@ -1,4 +1,5 @@
 #include "Common/ME3TweaksLogger.hpp"
+#include "LESDK/Headers.hpp"
 #include <format>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -14,6 +15,7 @@ namespace Common
 
 		if (outputType & LogOutput::OutputToConsole)
 		{
+			::LESDK::InitializeConsole();
 			m_logger->sinks().push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
 		}
 

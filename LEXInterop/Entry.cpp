@@ -46,15 +46,15 @@ namespace LEXInterop
     void InitializeGlobals(::LESDK::Initializer& Init)
     {
         Common::InitializeRequiredGlobals(Init);
-        GEngine = Init.ResolveTyped<UEngine*>(BUILTIN_GENGINE_RIP);
+        GEngine = Init.ResolveTyped<UEngine*>(BUILTIN_GENGINE_RVA);
         CHECK_RESOLVED(GEngine);
-        GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RIP);
+        GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RVA);
         CHECK_RESOLVED(GNatives);
-        GSys = Init.ResolveTyped<USystem*>(BUILTIN_GSYS_RIP);
+        GSys = Init.ResolveTyped<USystem*>(BUILTIN_GSYS_RVA);
         CHECK_RESOLVED(GSys);
-        GWorld = Init.ResolveTyped<UWorld*>(BUILTIN_GWORLD_RIP);
+        GWorld = Init.ResolveTyped<UWorld*>(BUILTIN_GWORLD_RVA);
         CHECK_RESOLVED(GWorld);
-        GError = Init.ResolveTyped<void*>(BUILTIN_GERROR_RIP);
+        GError = Init.ResolveTyped<void*>(BUILTIN_GERROR_RVA);
         CHECK_RESOLVED(GError);
         LEASI_INFO("Globals initialized");
     }
@@ -62,7 +62,7 @@ namespace LEXInterop
     void InitializeHooks(::LESDK::Initializer& Init)
     {
         // ProcessEvent hook
-        auto const ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+        auto const ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
         CHECK_RESOLVED(ProcessEvent_target);
         UObject_ProcessEvent_orig = reinterpret_cast<t_UObject_ProcessEvent*>(Init.InstallHook("UObject::ProcessEvent", ProcessEvent_target, UObject_ProcessEvent_hook));
         CHECK_RESOLVED(UObject_ProcessEvent_orig);

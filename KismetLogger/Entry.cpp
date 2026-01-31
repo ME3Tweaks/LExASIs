@@ -23,11 +23,11 @@ SPI_IMPLEMENT_ATTACH
 	);
 	try
 	{
-		::KismetLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".txt");
+		::KismetLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
-		LEASI_ERROR("Failed to create " ASI_NAME_NO_SPACE_A ".txt: {}", ex.what());
+		LEASI_ERROR("Failed to create " ASI_NAME_NO_SPACE_A ".log: {}", ex.what());
 		return false;
 	}
 
@@ -67,14 +67,14 @@ namespace KismetLogger
 	{
 		// UObject::ProcessEvent hook for UnrealScript Activated() logging
 		// ----------------------------------------
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
+		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
 		CHECK_RESOLVED(UObject_ProcessEvent_orig);
 
 		// UObject::ProcessInternal hook for native Activated() logging
 		// ----------------------------------------
-		auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_PHOOK);
+		auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_RVA);
 		CHECK_RESOLVED(UObject_ProcessInternal_target);
 		UObject_ProcessInternal_orig = (t_UObject_ProcessInternal*)Init.InstallHook("UObject::ProcessInternal", UObject_ProcessInternal_target, UObject_ProcessInternal_hook);
 		CHECK_RESOLVED(UObject_ProcessInternal_orig);

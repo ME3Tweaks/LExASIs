@@ -77,4 +77,21 @@ namespace Common
         spdlog::flush_on(spdlog::level::warn);
         spdlog::flush_every(std::chrono::seconds(5));
     }
+
+    void ShutdownLogger() {
+        // Flush and release file logger
+        try {
+            if (spdlog::default_logger())
+            {
+                spdlog::default_logger()->flush();
+                spdlog::default_logger().reset();
+                spdlog::drop(_cachedLogBaseName);
+            }
+        }
+        catch (...) {
+            // Do nothing
+        }
+
+        ::LESDK::TerminateConsole();
+    }
 }

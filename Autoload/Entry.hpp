@@ -7,7 +7,6 @@
 
 namespace Autoload
 {
-    void InitializeLogger();
     void InitializeGlobals(::LESDK::Initializer& Init);
     void InitializeHooks(::LESDK::Initializer& Init);
 }
