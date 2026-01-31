@@ -44,7 +44,7 @@ namespace ConsoleExtension
 	{
 		// UEngine::Exec hook for console commands
 		// ----------------------------------------
-		auto const UEngine_Exec_target = Init.ResolveTyped<t_UEngine_Exec>(BUILTIN_EXEC_PHOOK);
+		auto const UEngine_Exec_target = Init.ResolveTyped<t_UEngine_Exec>(BUILTIN_UENGINE_EXEC_RVA);
 		CHECK_RESOLVED(UEngine_Exec_target);
 		UEngine_Exec_orig = (t_UEngine_Exec*)Init.InstallHook("UEngine::Exec", UEngine_Exec_target, UEngine_Exec_hook);
 		CHECK_RESOLVED(UEngine_Exec_orig);

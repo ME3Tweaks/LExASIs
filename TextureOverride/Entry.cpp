@@ -53,30 +53,30 @@ namespace TextureOverride
     {
 #if defined(SDK_TARGET_LE2) || defined(SDK_TARGET_LE3)
         // GFileManager so we can use InternalFindFiles
-        GFileManager = Init.ResolveTyped<void*>(GFILEMANAGER_RVA);
+        GFileManager = Init.ResolveTyped<void*>(BUILTIN_GFILEMANAGER_RVA);
         CHECK_RESOLVED(GFileManager);
 
         // InternalFindFiles
-        InternalFindFiles = Init.ResolveTyped<tInternalFindFiles>(INTERNAL_FIND_FILES_RVA);
+        InternalFindFiles = Init.ResolveTyped<tInternalFindFiles>(BUILTIN_INTERNAL_FIND_FILES_RVA);
         CHECK_RESOLVED(InternalFindFiles);
 
         // TFC registration
-        RegisterTFC = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
+        RegisterTFC = Init.ResolveTyped<tRegisterTFC>(BUILTIN_REGISTER_TFC_RVA);
         CHECK_RESOLVED(RegisterTFC);
 #endif
 
         // Find oodle decompression function.
-        OodleDecompress = Init.ResolveTyped<t_OodleDecompress>(OODLE_DECOMPRESS_RVA);
+        OodleDecompress = Init.ResolveTyped<t_OodleDecompress>(BUILTIN_OODLE_DECOMPRESS_RVA);
         CHECK_RESOLVED(OodleDecompress);
 
         // For replacing mip data
-        auto const UTexture2D_Serialize_target = Init.ResolveTyped<t_UTexture2D_Serialize>(UTEXTURE2D_SERIALIZE_RVA);
+        auto const UTexture2D_Serialize_target = Init.ResolveTyped<t_UTexture2D_Serialize>(BUILTIN_UTEXTURE2D_SERIALIZE_RVA);
         CHECK_RESOLVED(UTexture2D_Serialize_target);
         UTexture2D_Serialize_orig = (t_UTexture2D_Serialize*)Init.InstallHook("UTexture2D::Serialize", UTexture2D_Serialize_target, UTexture2D_Serialize_hook);
         CHECK_RESOLVED(UTexture2D_Serialize_orig);
 
         // For console commands
-        auto const UGameEngine_Exec_target = Init.ResolveTyped<t_UGameEngine_Exec>(UGAMEENGINE_EXEC_RVA);
+        auto const UGameEngine_Exec_target = Init.ResolveTyped<t_UGameEngine_Exec>(BUILTIN_UGAMEENGINE_EXEC_RVA);
         CHECK_RESOLVED(UGameEngine_Exec_target);
         UGameEngine_Exec_orig = (t_UGameEngine_Exec*)Init.InstallHook("UGameEngine::Exec", UGameEngine_Exec_target, UGameEngine_Exec_hook);
         CHECK_RESOLVED(UGameEngine_Exec_orig);

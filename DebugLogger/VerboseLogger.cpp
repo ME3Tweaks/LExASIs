@@ -8,6 +8,7 @@ namespace DebugLogger {
 #define VL_STRINGIFY(x) VL_STRINGIFY_IMPL(x)
 
 	// VerboseLogger RVAs
+	// These aren't hooks, just locations to patch to add hooks
 
 #if defined(SDK_TARGET_LE1)
 #define VL_ACCESSED_NONE_RVA					LEASI_RVA(0x12575a)
