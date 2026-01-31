@@ -34,8 +34,7 @@ namespace LinkerPrinter
 	void InitializeHooks(::LESDK::Initializer& Init)
 	{
 		// Install SetLinker hook
-		auto const setLinkerPattern = "8b c9 4d 85 d2 74 39 48 85 d2 74 1c 48 8b c1";
-		auto const setLinkerTarget = Init.ResolveTyped<t_SetLinker>(::LESDK::Address::FromPostHook(setLinkerPattern));
+		auto  const setLinkerTarget = Init.ResolveTyped<t_SetLinker>(BUILTIN_SETLINKER_RVA);
 		SetLinker_orig = (t_SetLinker*)Init.InstallHook("UObject::SetLinker", setLinkerTarget, SetLinker_hook);
 
 		// Install ProcessEvent hook

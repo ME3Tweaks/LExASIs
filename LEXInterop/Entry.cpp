@@ -81,8 +81,7 @@ namespace LEXInterop
         CHECK_RESOLVED(FindPackageFile_orig);
 
         // SetLinker hook 
-        constexpr auto setLinkerPattern = "8b c9 4d 85 d2 74 39 48 85 d2 74 1c 48 8b c1";
-        auto const SetLinker_target = Init.ResolveTyped<t_SetLinker>(::LESDK::Address::FromPostHook(setLinkerPattern));
+        auto const SetLinker_target = Init.ResolveTyped<t_SetLinker>(BUILTIN_SETLINKER_RVA);
         CHECK_RESOLVED(SetLinker_target);
         SetLinker_orig = reinterpret_cast<t_SetLinker*>(Init.InstallHook("SetLinker", SetLinker_target, SetLinker_hook));
         CHECK_RESOLVED(SetLinker_orig);
