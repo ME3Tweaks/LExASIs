@@ -68,14 +68,7 @@ namespace LEXInterop
         CHECK_RESOLVED(UObject_ProcessEvent_orig);
 
         // FindPackageFile hook
-#if defined(SDK_TARGET_LE1)
-        constexpr auto findPackageFilePattern = "54 41 55 41 56 41 57 48 8d 6c 24 e1 48 81 ec e0 00 00 00 48 c7 45 b7 fe ff ff ff 48 89 9c 24 20 01 00 00";
-#elif defined(SDK_TARGET_LE2)
-        constexpr auto findPackageFilePattern = "54 41 55 41 56 41 57 48 8d 6c 24 e1 48 81 ec e0 00 00 00 48 c7 45 b7 fe ff ff ff 48 89 9c 24 20 01 00 00 48 8b 05 d9 1b b9 00";
-#elif defined(SDK_TARGET_LE3)
-        constexpr auto findPackageFilePattern = "48 89 4c 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8b ec 48 81 ec 80 00 00 00 48 c7 45 b8 fe ff ff ff";
-#endif
-        auto const FindPackageFile_target = Init.ResolveTyped<t_FindPackageFile>(::LESDK::Address::FromPostHook(findPackageFilePattern));
+        auto const FindPackageFile_target = Init.ResolveTyped<t_FindPackageFile>(BUILTIN_FINDPACKAGEFILE_RVA);
         CHECK_RESOLVED(FindPackageFile_target);
         FindPackageFile_orig = reinterpret_cast<t_FindPackageFile*>(Init.InstallHook("FindPackageFile", FindPackageFile_target, FindPackageFile_hook));
         CHECK_RESOLVED(FindPackageFile_orig);

@@ -10,28 +10,6 @@
 namespace TextureOverride
 {
 
-#if defined(SDK_TARGET_LE1)
-    #define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x3BD5D0)
-    #define UTEXTURE2D_SERIALIZE_RVA    ::LESDK::Address::FromOffset(0x2742b0)
-    #define OODLE_DECOMPRESS_RVA        ::LESDK::Address::FromOffset(0x15adb0)
-#elif defined(SDK_TARGET_LE2)
-    #define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x5383C0)
-    #define UTEXTURE2D_SERIALIZE_RVA    ::LESDK::Address::FromOffset(0x39ec80)
-    #define OODLE_DECOMPRESS_RVA        ::LESDK::Address::FromOffset(0x103ac0)
-    // Support for pre-dlc mount streaming textures
-    #define REGISTER_TFC_RVA            ::LESDK::Address::FromOffset(0x390d30)
-    #define INTERNAL_FIND_FILES_RVA      ::LESDK::Address::FromOffset(0xa4bcc0)
-    #define GFILEMANAGER_RVA             ::LESDK::Address::FromOffset(0x16823c0)
-#elif defined(SDK_TARGET_LE3)
-    #define UGAMEENGINE_EXEC_RVA        ::LESDK::Address::FromOffset(0x541920)
-    #define UTEXTURE2D_SERIALIZE_RVA    ::LESDK::Address::FromOffset(0x3C1FB0)
-    #define OODLE_DECOMPRESS_RVA        ::LESDK::Address::FromOffset(0x11fd10)
-    // Support for pre-dlc mount streaming textures and multi tfc
-    #define REGISTER_TFC_RVA            ::LESDK::Address::FromOffset(0x3B8470)
-    #define INTERNAL_FIND_FILES_RVA      ::LESDK::Address::FromOffset(0xa45ad0)
-    #define GFILEMANAGER_RVA             ::LESDK::Address::FromOffset(0x17cd5d0)
-#endif
-
     // ! UGameEngine::Exec
     // ========================================
 

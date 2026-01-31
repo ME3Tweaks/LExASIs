@@ -15,13 +15,7 @@ namespace LEXInterop
 		static_construct_object = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_PHOOK);
 		CHECK_RESOLVED(static_construct_object);
 
-
-#if defined(SDK_TARGET_LE1) || defined(SDK_TARGET_LE2)
-		auto farMoveHookAddress = ::LESDK::Address::FromPostHook(/*"40 55 53 57 41*/ "54 41 56 48 8d 6c 24 d9 48 81 ec a0 00 00 00");
-#elif defined(SDK_TARGET_LE3)
-		auto farMoveHookAddress = ::LESDK::Address::FromPostHook(/*"40 55 53 57 41*/ "54 41 57 48 8d 6c 24 e1 48 81 ec b0 00 00 00");
-#endif
-		FarMoveActor = Init.ResolveTyped<t_FarMoveActor>(farMoveHookAddress);
+		FarMoveActor = Init.ResolveTyped<t_FarMoveActor>(BUILTIN_UWORLD_FARMOVEACTOR_RVA);
 		CHECK_RESOLVED(FarMoveActor);
 
 		//This disables MoveActor's check for bStatic and bMoveable, so that we can rotate anything
