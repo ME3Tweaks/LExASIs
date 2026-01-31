@@ -37,12 +37,12 @@ void write(std::ofstream& file, void* data, std::streamsize size);
 void write(std::ofstream& file, BYTE data);
 void write(std::ofstream& file, ushort data);
 void write(std::ofstream& file, int data);
-void writeTOC(TCHAR tocPath[MAX_PATH], TCHAR baseDir[MAX_PATH], bool isDLC);
-void getFiles(std::vector<fileData>& files, TCHAR* basepath, TCHAR* searchPath);
-void getLE1Files(std::vector<fileData>& files, TCHAR* basepath);
+void writeTOC(const std::filesystem::path& tocPath, const std::filesystem::path& baseDir, bool isDLC);
+void getFiles(std::vector<fileData>& files, const std::filesystem::path& basepath, const std::string& searchPath);
+void getLE1Files(std::vector<fileData>& files, const std::filesystem::path& basepath);
 void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitiveCmp>& fileMap, const std::filesystem::path& basepath, const std::string& searchPath);
-void AutoToc(TCHAR path[MAX_PATH]);
-static unsigned HashFileName(const char* strToHash, int len);
+void AutoToc(const std::filesystem::path& path);
+static unsigned HashFileName(const std::string& strToHash);
 
 // CRC Table
 extern const unsigned crcTable[];

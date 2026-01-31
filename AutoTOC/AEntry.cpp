@@ -55,7 +55,7 @@ SPI_IMPLEMENT_ATTACH
 	TCHAR path[MAX_PATH];
 	HMODULE hModule = GetModuleHandle(NULL);
 	GetModuleFileName(hModule, path, MAX_PATH);
-	AutoToc(path);
+	AutoToc(std::filesystem::path(path));
 	return true;
 }
 
@@ -68,7 +68,7 @@ SPI_IMPLEMENT_DETACH
 	return true;
 }
 
-void AutoToc(TCHAR path[MAX_PATH])
+void AutoToc(const std::filesystem::path& path)
 {
 	// Convert to std::filesystem::path for modern C++ path manipulation
 	std::filesystem::path fsPath(path);
@@ -87,13 +87,8 @@ void AutoToc(TCHAR path[MAX_PATH])
 	
 	LOG("writing basegame toc...");
 	
-	// Convert paths to TCHAR arrays for writeTOC (which still uses TCHAR*)
-	TCHAR baseDirBuffer[MAX_PATH];
-	TCHAR tocPathBuffer[MAX_PATH];
-	StringCchCopy(baseDirBuffer, MAX_PATH, baseGamePath.string().c_str());
-	StringCchCopy(tocPathBuffer, MAX_PATH, tocPath.string().c_str());
-	
-	writeTOC(tocPathBuffer, baseDirBuffer, false);
+
+	writeTOC(tocPath, baseGamePath, false);
 
 	LOG_DURATION("finished basegame TOC");
 
@@ -116,14 +111,10 @@ void AutoToc(TCHAR path[MAX_PATH])
 				{
 					LOG("writing toc for {}", dirName);
 					
-					const std::filesystem::path dlcBaseDir = entry.path();
-					const std::filesystem::path dlcTocPath = dlcBaseDir / "PCConsoleTOC.bin";
-					
-					// Convert paths to TCHAR arrays for writeTOC
-					StringCchCopy(baseDirBuffer, MAX_PATH, (dlcBaseDir.string() + "\\").c_str());
-					StringCchCopy(tocPathBuffer, MAX_PATH, dlcTocPath.string().c_str());
-					
-					writeTOC(tocPathBuffer, baseDirBuffer, true);
+				const std::filesystem::path dlcBaseDir = entry.path();
+				const std::filesystem::path dlcTocPath = dlcBaseDir / "PCConsoleTOC.bin";
+				
+				writeTOC(dlcTocPath, dlcBaseDir / "", true);
 				}
 			}
 		}
@@ -171,11 +162,11 @@ const unsigned crcTable[] = { 0, 79764919, 159529838, 222504665, 319059676, 3988
 //	}
 //}
 
-static unsigned HashFileName(const char* strToHash, int len)
+static unsigned HashFileName(const std::string& strToHash)
 {
 	unsigned hash = 0;
 
-	for (int i = 0; i < len; ++i)
+	for (size_t i = 0; i < strToHash.length(); ++i)
 	{
 		hash = hash >> 8 & 0x00FFFFFF ^ crcTable[(hash ^ static_cast<BYTE>(toupper(strToHash[i]))) & 0x000000FF];
 		hash = hash >> 8 & 0x00FFFFFF ^ crcTable[hash & 0x000000FF];
@@ -183,7 +174,7 @@ static unsigned HashFileName(const char* strToHash, int len)
 	return hash;
 }
 
-void writeTOC(TCHAR tocPath[MAX_PATH], TCHAR baseDir[MAX_PATH], const bool isDLC)
+void writeTOC(const std::filesystem::path& tocPath, const std::filesystem::path& baseDir, const bool isDLC)
 {
 	vector<fileData> files;
 	LOG("getting files..");
@@ -201,7 +192,7 @@ void writeTOC(TCHAR tocPath[MAX_PATH], TCHAR baseDir[MAX_PATH], const bool isDLC
 #endif
 	}
 
-	LOG("got file list for TOC: {}", tocPath);
+	LOG("got file list for TOC: {}", tocPath.string());
 	LOG("calculating hash table..");
 	size_t tableSize = files.size();
 	const size_t minTableSize = tableSize / 2;
@@ -361,57 +352,44 @@ bool isTocableExtension(std::string ext) {
 	return false;
 }
 
-void getFiles(vector<fileData>& files, TCHAR* basepath, TCHAR* searchPath) {
-	WIN32_FIND_DATA fd;
-	LARGE_INTEGER fileSize;
-	HANDLE hFind = INVALID_HANDLE_VALUE;
-	TCHAR enumeratePath[MAX_PATH];
-	TCHAR tmpPath[MAX_PATH];
-	StringCchCopy(enumeratePath, MAX_PATH, basepath);
-	StringCchCat(enumeratePath, MAX_PATH, searchPath);
-	StringCchCat(enumeratePath, MAX_PATH, "*");
+void getFiles(vector<fileData>& files, const std::filesystem::path& basepath, const std::string& searchPath) {
+	const std::filesystem::path enumeratePath = basepath / searchPath;
 
-	LOG("enumerating files..");
-	hFind = FindFirstFile(enumeratePath, &fd);
-	do
+	LOG("enumerating files: {}", enumeratePath.string());
+
+	if (!std::filesystem::exists(enumeratePath))
 	{
-		StringCchCopy(tmpPath, MAX_PATH, searchPath);
-		StringCchCat(tmpPath, MAX_PATH, fd.cFileName);
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		return;
+	}
+
+	for (const auto& entry : std::filesystem::directory_iterator(enumeratePath))
+	{
+		const std::string filename = entry.path().filename().string();
+		const std::string relativePath = searchPath + filename;
+
+		if (entry.is_directory())
 		{
-			// 0 means true for lstrcmp
-			if (lstrcmp(fd.cFileName, "DLC") != 0 &&
-				lstrcmp(fd.cFileName, "Patches") != 0 &&
-				lstrcmp(fd.cFileName, "Splash") != 0 &&
-				lstrcmp(fd.cFileName, "Config") != 0 &&
-				lstrcmp(fd.cFileName, ".") != 0 &&
-				lstrcmp(fd.cFileName, "..") != 0)
+			// Skip excluded directories
+			if (filename != "DLC" &&
+				filename != "Patches" &&
+				filename != "Splash" &&
+				filename != "Config")
 			{
-				LOG("getting files from Directory: {}", fd.cFileName);
-				StringCchCat(tmpPath, MAX_PATH, "\\");
-				getFiles(files, basepath, tmpPath);
+				LOG("getting files from Directory: {}", filename);
+				getFiles(files, basepath, relativePath + "\\");
 			}
-
 		}
-		else
+		else if (entry.is_regular_file())
 		{
-			//allowed = { "*.pcc", "*.afc", "*.bik", "*.bin", "*.tlk", "*.txt", "*.cnd", "*.upk", "*.tfc", "*.isb", "*.usf" }
-			std::filesystem::path fsTmpPath(tmpPath);
-			std::string ext = fsTmpPath.extension().string();
-
-			// for performance we order these by most common extensions first
+			const std::string ext = entry.path().extension().string();
 			if (isTocableExtension(ext))
 			{
-				fileSize.HighPart = fd.nFileSizeHigh;
-				fileSize.LowPart = fd.nFileSizeLow;
-				string fileName = tmpPath;
-				LOG("found file: {}\t{}");
-				files.emplace_back(fileName, int(fileSize.QuadPart), HashFileName(fd.cFileName, (int)strlen(fd.cFileName)));
+				const int fileSize = static_cast<int>(std::filesystem::file_size(entry));
+				LOG("found file: {}\t{}", relativePath, fileSize);
+				files.emplace_back(relativePath, fileSize, HashFileName(filename));
 			}
-
 		}
-	} while (FindNextFile(hFind, &fd) != 0);
-	FindClose(hFind);
+	}
 }
 
 void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitiveCmp>& fileMap, const std::filesystem::path& basepath, const std::string& searchPath)
@@ -455,14 +433,14 @@ void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitive
 	}
 }
 
-void getLE1Files(vector<fileData>& files, TCHAR* basepath)
+void getLE1Files(vector<fileData>& files, const std::filesystem::path& basepath)
 {
 	std::map<int, std::string> dlcMount;
 	// std::map<int, std::string> dlcFriendlyNames;
 	std::map<std::string, std::pair<std::string, int>, caseInsensitiveCmp> fileMap;
 	bool dlcFound = false;
 
-	std::filesystem::path dlcPath = std::filesystem::path(basepath) / "BioGame" / "DLC";
+	std::filesystem::path dlcPath = basepath / "BioGame" / "DLC";
 
 	LOG("finding LE1 DLCs...");
 	if (std::filesystem::exists(dlcPath) && std::filesystem::is_directory(dlcPath))
@@ -514,9 +492,8 @@ void getLE1Files(vector<fileData>& files, TCHAR* basepath)
 
 	LOG("building file map...");
 
-	const std::filesystem::path basepathFs(basepath);
-	addToMap(fileMap, basepathFs, "BioGame\\");
-	addToMap(fileMap, basepathFs, "Engine\\");
+	addToMap(fileMap, basepath, "BioGame\\");
+	addToMap(fileMap, basepath, "Engine\\");
 
 	std::ofstream loadOrderTxt(dlcPath.string() + "\\LoadOrder.Txt");
 	loadOrderTxt << "This is an auto-generated file for informational purposes only. Editing it will not change the load order.\n\n";
@@ -525,7 +502,7 @@ void getLE1Files(vector<fileData>& files, TCHAR* basepath)
 		for (const auto& [mount, dlcName] : dlcMount)
 		{
 			const std::string dlcSubPath = (std::filesystem::path("BioGame") / "DLC" / dlcName / "").string();
-			addToMap(fileMap, basepathFs, dlcSubPath);
+			addToMap(fileMap, basepath, dlcSubPath);
 
 			loadOrderTxt << mount << ": " << dlcName << std::endl;
 		}
@@ -540,8 +517,10 @@ void getLE1Files(vector<fileData>& files, TCHAR* basepath)
 	for (const auto& [fileName, filePair] : fileMap)
 	{
 		LOG("{}    {}", filePair.first, filePair.second);
-		files.emplace_back(filePair.first, filePair.second, HashFileName(fileName.c_str(), static_cast<int>(fileName.length())));
+		files.emplace_back(filePair.first, filePair.second, HashFileName(fileName));
 	}
 }
+
+
 
 
