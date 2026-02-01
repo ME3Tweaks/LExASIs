@@ -4,8 +4,6 @@
 #include <SPI.h>
 #include "Common/Base.hpp"
 
-#include <spdlog/spdlog.h>
-
 #include "PNGScreenshots/SharedVersion.h"
 
 SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
