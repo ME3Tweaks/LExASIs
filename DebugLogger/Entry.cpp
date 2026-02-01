@@ -14,7 +14,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 SPI_IMPLEMENT_ATTACH
 {
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
-	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A);
+	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A, true);
 
 	::DebugLogger::InitializeGlobals(Init);
 	::DebugLogger::InitializeHooks(Init);

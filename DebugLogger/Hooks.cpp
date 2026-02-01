@@ -198,8 +198,19 @@ namespace DebugLogger
 			}
 		}
 		else {
-			LEASI_CRIT(L"FAILED TO CREATE EXPORT #{} from {}!", i + 1, Context->Filename);
-			LEASI_FLUSH();
+			// Inspect export to see if it should have actually been loaded per flags
+			FObjectExport& exp = Context->ExportMap(i);
+
+			// Check whether we already loaded the object and if not whether the context flags allow loading it.
+			if ((exp.ObjectFlags & Context->ContextFlags) != 0) {
+				// Should have loaded
+				LEASI_CRIT(L"FAILED TO CREATE EXPORT #{} from {}!", i + 1, Context->Filename);
+				LEASI_FLUSH();
+			}
+			else {
+				// wasn't marked to load, this is ok
+			}
+
 		}
 		if (bLogExportCreation) {
 			LEASI_FLUSH();

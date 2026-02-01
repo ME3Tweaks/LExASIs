@@ -215,7 +215,7 @@ namespace Autoload
 	void RootObject(UObject* callingObject)
 	{
 		if (callingObject) {
-			callingObject->ObjectFlags |= 0x4000; //RF_Root
+			callingObject->ObjectFlags |= EObjectFlags::RootSet; //RF_Root
 		}
 	}
 }
