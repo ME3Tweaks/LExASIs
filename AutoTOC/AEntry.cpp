@@ -1,5 +1,3 @@
-
-
 #include "Common/Base.hpp"
 #include "Common/DefaultLogger.hpp"
 #include <LESDK/Init.hpp>
@@ -72,7 +70,7 @@ void AutoToc(const std::filesystem::path& path)
 {
 	// Convert to std::filesystem::path for modern C++ path manipulation
 	std::filesystem::path fsPath(path);
-	
+
 	// Get the game base folder (two levels up from the initial path)
 	fsPath = fsPath.parent_path().parent_path().parent_path();
 
@@ -84,9 +82,9 @@ void AutoToc(const std::filesystem::path& path)
 	// Process basegame TOC
 	const std::filesystem::path baseGamePath = fsPath;
 	const std::filesystem::path tocPath = baseGamePath / "BioGame" / "PCConsoleTOC.bin";
-	
+
 	LOG("writing basegame toc...");
-	
+
 
 	writeTOC(tocPath, baseGamePath, false);
 
@@ -94,7 +92,7 @@ void AutoToc(const std::filesystem::path& path)
 
 #if defined SDK_TARGET_LE2 || defined SDK_TARGET_LE3
 	LOG("TOCing dlc:");
-	
+
 	const std::filesystem::path dlcPath = fsPath / "BioGame" / "DLC";
 
 	if (std::filesystem::is_directory(dlcPath))
@@ -105,16 +103,16 @@ void AutoToc(const std::filesystem::path& path)
 			if (entry.is_directory())
 			{
 				const std::string dirName = entry.path().filename().string();
-				
+
 				// Check if directory name starts with "DLC_"
 				if (dirName.length() > 4 && dirName.substr(0, 4) == "DLC_")
 				{
 					LOG("writing toc for {}", dirName);
-					
-				const std::filesystem::path dlcBaseDir = entry.path();
-				const std::filesystem::path dlcTocPath = dlcBaseDir / "PCConsoleTOC.bin";
-				
-				writeTOC(dlcTocPath, dlcBaseDir / "", true);
+
+					const std::filesystem::path dlcBaseDir = entry.path();
+					const std::filesystem::path dlcTocPath = dlcBaseDir / "PCConsoleTOC.bin";
+
+					writeTOC(dlcTocPath, dlcBaseDir / "", true);
 				}
 			}
 		}
@@ -177,6 +175,8 @@ static unsigned HashFileName(const std::string& strToHash)
 void writeTOC(const std::filesystem::path& tocPath, const std::filesystem::path& baseDir, const bool isDLC)
 {
 	vector<fileData> files;
+	// LE3 has 9k+ files in basegame, so reserve some space to avoid multiple allocations
+	files.reserve(10000);
 	LOG("getting files..");
 	if (isDLC)
 	{
@@ -186,7 +186,7 @@ void writeTOC(const std::filesystem::path& tocPath, const std::filesystem::path&
 	{
 #if defined SDK_TARGET_LE1
 		getLE1Files(files, baseDir);
-#else		
+#else           
 		getFiles(files, baseDir, "BioGame\\");
 		getFiles(files, baseDir, "Engine\\");
 #endif
@@ -194,112 +194,150 @@ void writeTOC(const std::filesystem::path& tocPath, const std::filesystem::path&
 
 	LOG("got file list for TOC: {}", tocPath.string());
 	LOG("calculating hash table..");
+
+	// Single-pass algorithm: test a small set of candidate sizes
+	const size_t minTableSize = files.size() / 2;
+	const std::vector<size_t> candidateSizes = {
+		files.size(),
+		files.size() * 3 / 4,
+		files.size() * 5 / 8,
+		minTableSize
+	};
+
 	size_t tableSize = files.size();
-	const size_t minTableSize = tableSize / 2;
-	std::set<unsigned> uniques;
-	while (true)
+	size_t bestFillRatio = 0;
+	std::vector<unsigned> hashBuckets;
+	hashBuckets.reserve(files.size()); // Pre-allocate once
+
+	for (const auto& file_data : files)
 	{
-		for (auto file_data : files)
-		{
-			uniques.insert(file_data.hash % tableSize);
-		}
-		if (tableSize - uniques.size() <= tableSize / 4)
-		{
-			break;
-		}
-		tableSize -= tableSize / 4;
-		if (tableSize <= minTableSize)
-		{
-			break;
-		}
-		uniques.clear();
+		hashBuckets.push_back(file_data.hash);
 	}
 
-	LOG("{} buckets for {} entries. {} buckets filled.", tableSize, files.size(), uniques.size());
+	// Test each candidate size to find the best distribution
+	for (size_t candidateSize : candidateSizes)
+	{
+		std::vector<bool> bucketUsed(candidateSize, false); // Faster than set for presence check
+		size_t uniqueCount = 0;
+
+		for (unsigned hash : hashBuckets)
+		{
+			size_t bucket = hash % candidateSize;
+			if (!bucketUsed[bucket])
+			{
+				bucketUsed[bucket] = true;
+				uniqueCount++;
+			}
+		}
+
+		// Accept if we have >75% fill ratio
+		if (candidateSize - uniqueCount <= candidateSize / 4)
+		{
+			tableSize = candidateSize;
+			bestFillRatio = uniqueCount;
+			break;
+		}
+
+		// Track best option as fallback
+		if (uniqueCount > bestFillRatio)
+		{
+			tableSize = candidateSize;
+			bestFillRatio = uniqueCount;
+		}
+	}
+
+	LOG("{} buckets for {} entries. {} buckets filled.", tableSize, files.size(), bestFillRatio);
 
 	vector<vector<fileData>> buckets(tableSize);
 
-	for (auto file_data : files)
+	for (const auto& file_data : files)
 	{
 		buckets[file_data.hash % tableSize].emplace_back(file_data);
 	}
 
-	LOG("created hash table");
-	LOG("writing file data..");
-	ofstream toc;
-	toc.open(tocPath, ios::out | ios::binary | ios::trunc);
-	//header
-	write(toc, int(0x3AB70C13)); //magic number
-	write(toc, int(0)); //zero
+       LOG("created hash table");
+       LOG("building TOC file in memory..");
+       std::vector<char> tocBuffer;
+       tocBuffer.reserve(1024 * 1024); // Reserve 1MB, adjust as needed
 
-	write(toc, int(tableSize));
+       //header
+       int magic = 0x3AB70C13;
+       int zeroInt = 0;
+       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&magic), reinterpret_cast<const char*>(&magic) + sizeof(magic));
+       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&zeroInt), reinterpret_cast<const char*>(&zeroInt) + sizeof(zeroInt));
 
-	size_t entryPos = tableSize * 8;
-	int tablePos = 0;
-	//write the table
-	for (size_t i = 0; i < buckets.size(); ++i)
-	{
-		auto bucket = buckets[i];
-		if (bucket.empty())
-		{
-			write(toc, int(0));
-			write(toc, int(0));
-		}
-		else
-		{
-			write(toc, int(entryPos - tablePos));
-			write(toc, int(bucket.size()));
+       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&tableSize), reinterpret_cast<const char*>(&tableSize) + sizeof(tableSize));
 
-			for (auto file_data : bucket)
-			{
-				//size of entry: everything before the string, the stringlength, and the null character
-				ushort entryLength = ushort(0x1D + file_data.fileName.length());
-				auto pad = (4 - entryLength % 4) % 4;
-				entryLength += (ushort)pad;
-				entryPos += entryLength;
-			}
-		}
-		tablePos += 8;
+       size_t entryPos = tableSize * 8;
+       int tablePos = 0;
+       //write the table
+       std::vector<size_t> entryOffsets(buckets.size(), 0);
+       for (size_t i = 0; i < buckets.size(); ++i)
+       {
+               const auto& bucket = buckets[i];
+               if (bucket.empty())
+               {
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&zeroInt), reinterpret_cast<const char*>(&zeroInt) + sizeof(zeroInt));
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&zeroInt), reinterpret_cast<const char*>(&zeroInt) + sizeof(zeroInt));
+               }
+               else
+               {
+                       int offset = static_cast<int>(entryPos - tablePos);
+                       int bucketSize = static_cast<int>(bucket.size());
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&offset), reinterpret_cast<const char*>(&offset) + sizeof(offset));
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&bucketSize), reinterpret_cast<const char*>(&bucketSize) + sizeof(bucketSize));
 
-	}
-	streampos lastentrySizePos = 0;
-	//write the entries
-	for (size_t i = 0; i < buckets.size(); ++i)
-	{
-		auto bucket = buckets[i];
-		for (auto file_data : bucket)
-		{
-			const size_t stringLength = file_data.fileName.length();
-			//size of entry: everything before the string, the stringlength, and the null character
-			ushort entryLength = ushort(0x1D + stringLength);
-			ushort pad = (4 - entryLength % 4) % 4;
-			entryLength += pad;
-			lastentrySizePos = toc.tellp();
-			write(toc, entryLength);
-			write(toc, static_cast<ushort>(0));
-			write(toc, file_data.fileSize);
-			write(toc, int(0));
-			write(toc, int(0));
-			write(toc, int(0));
-			write(toc, int(0));
-			write(toc, int(0));
-			toc.write(file_data.fileName.c_str(), stringLength);
-			write(toc, BYTE(0));
-			//align
-			for (; pad > 0; --pad)
-			{
-				write(toc, BYTE(0));
-			}
-		}
-	}
+                       for (const auto& file_data : bucket)
+                       {
+                               ushort entryLength = ushort(0x1D + file_data.fileName.length());
+                               auto pad = (4 - entryLength % 4) % 4;
+                               entryLength += (ushort)pad;
+                               entryPos += entryLength;
+                       }
+               }
+               tablePos += 8;
+       }
 
-	if (lastentrySizePos > 0)
-	{
-		toc.seekp(lastentrySizePos);
-		//last entry doesn't have to have a size for some reason
-		write(toc, ushort(0));
-	}
-	toc.close();
+       //write the entries
+       std::vector<size_t> entrySizePositions;
+       for (size_t i = 0; i < buckets.size(); ++i)
+       {
+               const auto& bucket = buckets[i];
+               for (const auto& file_data : bucket)
+               {
+                       const size_t stringLength = file_data.fileName.length();
+                       ushort entryLength = ushort(0x1D + stringLength);
+                       ushort pad = (4 - entryLength % 4) % 4;
+                       entryLength += pad;
+                       // Record position for last entry size
+                       entrySizePositions.push_back(tocBuffer.size());
+                       // Buffer the entry in memory
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&entryLength), reinterpret_cast<const char*>(&entryLength) + sizeof(entryLength));
+                       ushort zeroUShort = 0;
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&zeroUShort), reinterpret_cast<const char*>(&zeroUShort) + sizeof(zeroUShort));
+                       tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&file_data.fileSize), reinterpret_cast<const char*>(&file_data.fileSize) + sizeof(file_data.fileSize));
+                       for (int j = 0; j < 5; ++j)
+                               tocBuffer.insert(tocBuffer.end(), reinterpret_cast<const char*>(&zeroInt), reinterpret_cast<const char*>(&zeroInt) + sizeof(zeroInt));
+                       tocBuffer.insert(tocBuffer.end(), file_data.fileName.c_str(), file_data.fileName.c_str() + stringLength);
+                       BYTE zeroByte = 0;
+                       tocBuffer.push_back(static_cast<char>(zeroByte));
+                       for (ushort p = 0; p < pad; ++p)
+                               tocBuffer.push_back(static_cast<char>(zeroByte));
+               }
+       }
+
+       //last entry doesn't have to have a size for some reason
+       if (!entrySizePositions.empty())
+       {
+               ushort zeroUShort = 0;
+               size_t lastPos = entrySizePositions.back();
+               std::memcpy(&tocBuffer[lastPos], &zeroUShort, sizeof(zeroUShort));
+       }
+
+       LOG("writing TOC file to disk..");
+       std::ofstream toc(tocPath, std::ios::out | std::ios::binary | std::ios::trunc);
+       toc.write(tocBuffer.data(), tocBuffer.size());
+       toc.close();
 }
 
 
@@ -319,7 +357,7 @@ void write(ofstream& file, int data) {
 	file.write(reinterpret_cast<char*>(&data), 4);
 }
 
-bool isTocableExtension(std::string ext) {
+bool isTocableExtension(std::string_view ext) {
 	// Order from most common to least common for performance
 	if (ext == ".pcc"
 
@@ -362,31 +400,36 @@ void getFiles(vector<fileData>& files, const std::filesystem::path& basepath, co
 		return;
 	}
 
+	std::string relativePathBuffer;
+	relativePathBuffer.reserve(MAX_PATH);
 	for (const auto& entry : std::filesystem::directory_iterator(enumeratePath))
 	{
 		const std::string filename = entry.path().filename().string();
-		const std::string relativePath = searchPath + filename;
 
 		if (entry.is_directory())
 		{
-			// Skip excluded directories
 			if (filename != "DLC" &&
 				filename != "Patches" &&
 				filename != "Splash" &&
 				filename != "Config")
 			{
+				relativePathBuffer = searchPath;
+				relativePathBuffer += filename;
+				relativePathBuffer += "\\";
 				LOG("getting files from Directory: {}", filename);
-				getFiles(files, basepath, relativePath + "\\");
+				getFiles(files, basepath, relativePathBuffer);
 			}
 		}
 		else if (entry.is_regular_file())
 		{
-			const std::string ext = entry.path().extension().string();
+			std::string_view ext = entry.path().extension().string();
 			if (isTocableExtension(ext))
 			{
-				const int fileSize = static_cast<int>(std::filesystem::file_size(entry));
-				LOG("found file: {}\t{}", relativePath, fileSize);
-				files.emplace_back(relativePath, fileSize, HashFileName(filename));
+				relativePathBuffer = searchPath;
+				relativePathBuffer += filename;
+				const int fileSize = static_cast<int>(entry.file_size());
+				LOG("found file: {}\t{}", relativePathBuffer, fileSize);
+				files.emplace_back(relativePathBuffer, fileSize, HashFileName(filename));
 			}
 		}
 	}
@@ -403,10 +446,12 @@ void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitive
 		return;
 	}
 
+	std::string relativePathBuffer;
+	relativePathBuffer.reserve(MAX_PATH);
+
 	for (const auto& entry : std::filesystem::directory_iterator(enumeratePath))
 	{
 		const std::string filename = entry.path().filename().string();
-		const std::string relativePath = searchPath + filename;
 
 		if (entry.is_directory())
 		{
@@ -416,18 +461,23 @@ void addToMap(std::map<std::string, std::pair<std::string, int>, caseInsensitive
 				filename != "Splash" &&
 				filename != "Config")
 			{
+				relativePathBuffer = searchPath;
+				relativePathBuffer += filename;
+				relativePathBuffer += "\\";
 				LOG("getting files from Directory: {}", filename);
-				addToMap(fileMap, basepath, relativePath + "\\");
+				addToMap(fileMap, basepath, relativePathBuffer);
 			}
 		}
 		else if (entry.is_regular_file())
 		{
-			const std::string ext = entry.path().extension().string();
+			std::string_view ext = entry.path().extension().string();
 			if (isTocableExtension(ext))
 			{
-				const int fileSize = static_cast<int>(std::filesystem::file_size(entry));
-				LOG("found file: {}\t{}", relativePath, relativePath.size());
-				fileMap[filename] = std::make_pair(relativePath, fileSize);
+				relativePathBuffer = searchPath;
+				relativePathBuffer += filename;
+				const int fileSize = static_cast<int>(entry.file_size());
+				LOG("found file: {}\t{}", relativePathBuffer, relativePathBuffer.size());
+				fileMap[filename] = std::make_pair(relativePathBuffer, fileSize);
 			}
 		}
 	}
@@ -454,7 +504,7 @@ void getLE1Files(vector<fileData>& files, const std::filesystem::path& basepath)
 				{
 					FString error;
 					int mount = Common::TryReadMountPriority(entry.path(), &error);
-					
+
 					if (mount > 0)
 					{
 						// Successfully read mount priority
@@ -520,6 +570,9 @@ void getLE1Files(vector<fileData>& files, const std::filesystem::path& basepath)
 		files.emplace_back(filePair.first, filePair.second, HashFileName(fileName));
 	}
 }
+
+
+
 
 
 
