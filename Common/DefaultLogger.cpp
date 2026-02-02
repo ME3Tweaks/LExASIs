@@ -56,7 +56,9 @@ namespace Common
 		}
 		try {
 			auto FileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Logs/" + std::string(logBaseName) + ".log", true);
+#ifdef _DEBUG
 			FileSink->set_level(spdlog::level::trace);
+#endif
 			DefaultLogger->sinks().push_back(std::move(FileSink));
 		}
 		catch (const spdlog::spdlog_ex& ex)
@@ -70,13 +72,19 @@ namespace Common
 #ifndef _DEBUG
 		// Check command line to see if we should turn on lower level logging
 		// This is so we can have more logging in release builds for users.
-		int numArgs;
-		auto args = CommandLineToArgvW(GetCommandLineW(), &numArgs);
-		for (int i = 0; i < numArgs; i++) {
-			if (wcscmp(args[i], L"-to-trace")) {
-				DefaultLogger->set_level(spdlog::level::trace);
-			}
-		}
+        int numArgs;
+        auto args = CommandLineToArgvW(GetCommandLineW(), &numArgs);
+        if (args) {
+            for (int i = 0; i < numArgs; i++) {
+                // wcscmp returns 0 when strings are equal, so check for == 0
+                if (wcscmp(args[i], L"-trace-log-level") == 0) {
+                    LEASI_INFO("-trace-log-level enabled!");
+                    DefaultLogger->set_level(spdlog::level::trace);
+                    break; // no need to keep scanning
+                }
+            }
+            LocalFree(args);
+        }
 #else
 		DefaultLogger->set_level(spdlog::level::trace);
 #endif
