@@ -90,9 +90,7 @@ namespace Common
 		try {
 			if (spdlog::default_logger())
 			{
-				spdlog::default_logger()->flush();
-				spdlog::default_logger().reset();
-				spdlog::drop(_cachedLogBaseName);
+				spdlog::shutdown();
 			}
 		}
 		catch (...) {
