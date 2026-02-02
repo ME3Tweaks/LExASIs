@@ -136,6 +136,7 @@ namespace Bio2DAPrinter
 				Print2DAs();
 				CanPrint2DAs = false; // Will not activate combo again until you re-press combo
 				LEASI_INFO("Printed 2DAs to log. Can no longer print 2DAs in this session.");
+				Common::ShutdownLogger(); // Close out log, as we no longer will be writing to it.
 			}
 			else {
 				// Listening for CTRL + 2 combo.
