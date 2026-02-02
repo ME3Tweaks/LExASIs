@@ -1,6 +1,7 @@
 #include <thread>
 #include <chrono>
 #include "Common/Base.hpp"
+#include "Common/DefaultLogger.hpp"
 #include "Autoload/Hooks.hpp"
 #include "Autoload/DLCPackage.hpp"
 
@@ -124,6 +125,9 @@ namespace Autoload
 				}
 			}
 		}
+
+		LEASI_INFO("All AutoLoaderEnabler tasks completed");
+		Common::ShutdownLogger();
 	}
 
 	tProcessEvent* ProcessEvent_orig = nullptr;
