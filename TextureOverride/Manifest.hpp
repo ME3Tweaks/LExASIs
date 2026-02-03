@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string_view>
+#include <string>
 #include <unordered_map>
 #include <Windows.h>
 #include <LESDK/Headers.hpp>
@@ -186,6 +187,7 @@ namespace TextureOverride
         TextureMap_t    TextureMap{};
         TfcRefTable_t   TfcRefTable{};
         int             MountPriority{ 0 };
+        std::wstring    DlcName{};
 
     public:
 
@@ -202,6 +204,11 @@ namespace TextureOverride
          * @return      Whether loading was successful.
          */
         bool Load(std::wstring_view InPath, std::wstring_view InDlcName, FString& OutError);
+
+		/** 
+        * @brief Retrieves the DLC name this manifest is associated with. 
+        */
+		std::wstring_view GetDlcName() const;
 
 #pragma pack(push, 8)
         struct ResolvedMip final

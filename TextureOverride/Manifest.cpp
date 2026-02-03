@@ -23,7 +23,6 @@ namespace TextureOverride
         {
             Value = (Value * Prime) ^ Byte;
         }
-
         FNV1Hash32& operator<<(wchar_t const* String)
         {
             wchar_t Char;
@@ -138,6 +137,8 @@ namespace TextureOverride
     {
         LEASI_CHECKW(!InPath.empty(), L"empty input path", L"");
         LEASI_CHECKW(!InDlcName.empty(), L"empty input dlc name", L"");
+        // Store the DLC name for later retrieval.
+        DlcName = std::wstring(InDlcName);
 
         FileHandle = ::CreateFileW(InPath.data(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0u, NULL);
         if (FileHandle == INVALID_HANDLE_VALUE)
@@ -345,6 +346,11 @@ namespace TextureOverride
         auto const& TfcName = TfcRefTable[Entry->TfcRefIndex].TfcName;
         LEASI_VERIFYA(FindChar(TfcName, L'\0') != nullptr, "invalid tfc name", "");
         return FString::Printf(L"%s", TfcName);
+    }
+
+    std::wstring_view ManifestLoader::GetDlcName() const
+    {
+        return DlcName;
     }
 
     bool ManifestLoader::CompareReverse(ManifestLoaderPointer const& Left, ManifestLoaderPointer const& Right)

@@ -48,16 +48,16 @@ namespace TextureOverride
                 continue;
             }
 
-            LEASI_DEBUG(L"mount priority for '{}' is {}", DlcName, MountPriority);
+            LEASI_TRACE(L"mount priority for '{}' is {}", DlcName, MountPriority);
 
             fs::path const ManifestPath = DlcPath / "CombinedTextureOverrides.btp";
-            LEASI_DEBUG(L"looking for manifest {}", ManifestPath.c_str());
+            LEASI_TRACE(L"looking for manifest {}", ManifestPath.c_str());
 
             if (!fs::exists(ManifestPath))
                 continue;
 
             FString LoadError{};
-            LEASI_DEBUG(L"loading manifest {}", ManifestPath.c_str());
+            LEASI_INFO(L"loading manifest {}", ManifestPath.c_str());
 
             ManifestLoaderPointer Manifest = std::make_shared<ManifestLoader>();
             if (!Manifest->Load(ManifestPath.wstring(), DlcName, LoadError))

@@ -53,7 +53,7 @@ namespace TextureOverride
 				break;
 			}
 
-			LEASI_DEBUG(L"UTexture2D::Serialize: waiting for manifests to finish loading... ({} stalls remaining)", g_remainingAllowedStalls);
+			LEASI_INFO(L"UTexture2D::Serialize: waiting for manifests to finish loading... ({} stalls remaining)", g_remainingAllowedStalls);
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 			g_remainingAllowedStalls--;
 		}
@@ -86,7 +86,7 @@ namespace TextureOverride
 			{
 				CTextureEntry const* const Entry = Manifest->FindEntry(TextureFullName);
 				if (Entry == nullptr) continue;
-				LEASI_INFO(L"UTexture2D::Serialize: replacing {}", *TextureFullName);
+                LEASI_INFO(L"UTexture2D::Serialize: replacing {} via {}", *TextureFullName, Manifest->GetDlcName().data());
 				UpdateTextureFromManifest(Context, *Manifest, *Entry);
 				return;  // apply only the highest-priority manifest mount
 			}
