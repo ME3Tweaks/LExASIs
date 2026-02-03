@@ -63,7 +63,9 @@ namespace TextureOverride
             if (!Manifest->Load(ManifestPath.wstring(), DlcName, LoadError))
             {
                 LEASI_ERROR(L"failed to load manifest {}", ManifestPath.c_str());
-                LEASI_ERROR(L"error: {}", *LoadError);
+                if (LoadError.Length() > 0) {
+                    LEASI_ERROR(L"error: {}", *LoadError);
+                }
                 continue;
             }
 

@@ -165,7 +165,7 @@ namespace TextureOverride
         }
 
 #define CLOSE_ERROR(...)                                                                        \
-    LEASI_WARN(__VA_ARGS__);                                                                    \
+    LEASI_ERROR(__VA_ARGS__);                                                                    \
     ::UnmapViewOfFile(std::exchange(View, reinterpret_cast<LPVOID>(NULL)));                     \
     ::CloseHandle(std::exchange(MappingHandle, reinterpret_cast<HANDLE>(NULL)));                \
     ::CloseHandle(std::exchange(FileHandle, reinterpret_cast<HANDLE>(INVALID_HANDLE_VALUE)));
