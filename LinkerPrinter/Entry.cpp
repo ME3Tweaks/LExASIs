@@ -51,10 +51,14 @@ SPI_IMPLEMENT_ATTACH
 
 	::LESDK::Initializer Init{ InterfacePtr, ASI_NAME_NO_SPACE_A };
 
+#ifdef _DEBUG
 	::LESDK::InitializeConsole();
+#endif
 	auto outputType = Common::ME3TweaksLogger::LogOutput(
-		Common::ME3TweaksLogger::LogOutput::OutputToFile |
-		Common::ME3TweaksLogger::LogOutput::OutputToConsole
+		Common::ME3TweaksLogger::LogOutput::OutputToFile 
+#ifdef _DEBUG
+		| Common::ME3TweaksLogger::LogOutput::OutputToConsole
+#endif
 	);
 	try
 	{
@@ -83,11 +87,8 @@ SPI_IMPLEMENT_DETACH
 	// Flush and cleanup logger
 	if (::LinkerPrinter::FileLogger)
 	{
-		::LinkerPrinter::FileLogger->flush();
-		::LinkerPrinter::FileLogger.reset();
 		try {
-			spdlog::drop(ASI_NAME_NO_SPACE_A);
-
+			spdlog::shutdown();
 		} catch (int errorCode) {
 			LEASI_UNUSED(errorCode);
 			// We can't do anything. Just swallow it

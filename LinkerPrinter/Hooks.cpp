@@ -108,12 +108,6 @@ namespace LinkerPrinter
 		long numDone = 0;
 		for (auto const& [objectPath, filename] : NodePathToFileNameMap)
 		{
-			// Progress indicator every 1000 objects
-			if (numDone % 1000 == 0)
-			{
-				LEASI_TRACE(L"{} done", numDone);
-			}
-
 			// Check if object still exists in memory
 			if (ObjectNameToObjectMap.find(objectPath) == ObjectNameToObjectMap.end())
 			{
