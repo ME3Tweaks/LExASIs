@@ -15,28 +15,31 @@ SPI_IMPLEMENT_ATTACH
 {
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 	// Initialize console and file logger
+#ifdef _DEBUG
 	::LESDK::InitializeConsole();
+#endif
 
 	::SeqActLogEnabler::InitializeGlobals(Init);
 	::SeqActLogEnabler::InitializeHooks(Init);
 
 	auto outputType = Common::ME3TweaksLogger::LogOutput(
-		Common::ME3TweaksLogger::LogOutput::OutputToFile |
-		Common::ME3TweaksLogger::LogOutput::OutputToConsole
+		Common::ME3TweaksLogger::LogOutput::OutputToFile 
+#ifdef _DEBUG
+		| Common::ME3TweaksLogger::LogOutput::OutputToConsole
+#endif
 	);
 	try
 	{
-		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, ASI_NAME_NO_SPACE_A ".log");
+		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, "Logs/" ASI_NAME_NO_SPACE_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
 		LEASI_ERROR("Failed to create SeqActLog.log: {}", ex.what());
-		return false;
+		// return false;
 	}
 
 	// Initialize screen logger
 	::SeqActLogEnabler::OnScreenLogger = std::make_unique<::SeqActLogEnabler::ScreenLogger>(L"SeqAct_Log Messages");
-
 
 	return true;
 }
