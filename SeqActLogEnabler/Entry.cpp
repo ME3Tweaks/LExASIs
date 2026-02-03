@@ -30,7 +30,7 @@ SPI_IMPLEMENT_ATTACH
 	);
 	try
 	{
-		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, "Logs/" ASI_NAME_NO_SPACE_A ".log");
+		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, ASI_NAME_NO_SPACE_A ".log");
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
