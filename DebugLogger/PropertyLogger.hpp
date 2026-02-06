@@ -3,6 +3,18 @@
 #include <string>
 #include <LESDK/Headers.hpp>
 
+// Stream operator overloads to eliminate .Chars() calls
+// These must be in the global namespace for ADL to work correctly
+inline std::wostream& operator<<(std::wostream& os, const FString& str)
+{
+	return os << str.Chars();
+}
+
+inline std::wostream& operator<<(std::wostream& os, const SFXName& name)
+{
+	return os << name.Instanced();
+}
+
 namespace DebugLogger {
 
 	class PropertyLogger
@@ -13,8 +25,8 @@ namespace DebugLogger {
 
 		void IncreaseIndent();
 		void DecreaseIndent();
-		std::wstringstream&& indent();
-		std::wstringstream&& out();
+		void indent();
+		// std::wstringstream&& out();
 
 	public:
 
