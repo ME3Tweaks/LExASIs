@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"DebugLogger"
 
 
-#define ASI_VERSION 7
+#define ASI_VERSION 8
 // String that appears in the file description and part of SPI
 #define ASI_DESCRIPTION "Debug Logger logs various pieces of information useful for developers and troubleshooting."
 
