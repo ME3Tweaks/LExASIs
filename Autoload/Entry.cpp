@@ -41,6 +41,14 @@ namespace Autoload
         RegisterTFC = Init.ResolveTyped<tRegisterTFC>(REGISTER_TFC_RVA);
         CHECK_RESOLVED(RegisterTFC);
 
+        // TLK Tokenizing
+		TlkManagerTokenizeString = Init.ResolveTyped<tTlkManagerTokenizeString>(BIOTLKFILE_CUSTOMTOKENS_RVA);
+        CHECK_RESOLVED(TlkManagerTokenizeString);
+
+        // TlkFileGetString
+        TlkFileGetString = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING_RVA);
+        CHECK_RESOLVED(TlkFileGetString);
+
         // ISB registration
 		auto const CacheContentWrapper_target = Init.ResolveTyped<tCacheContentWrapper>(CACHECONTENT_WRAPPER_RVA);
 		CHECK_RESOLVED(CacheContentWrapper_target);
@@ -81,6 +89,21 @@ namespace Autoload
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		ProcessEvent_orig = (tProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, ProcessEvent_hook);
 		CHECK_RESOLVED(ProcessEvent_orig);
+
+        // For TLK overrides
+        {
+            auto const TLKLookup_target = Init.ResolveTyped<tTlkManagerGetSimpleString>(TLKLOOKUP_SIMPLE_RVA);
+            CHECK_RESOLVED(TLKLookup_target);
+            TLKLookupSimple_orig = (tTlkManagerGetSimpleString*)Init.InstallHook("UBioTlkManager::TLKLookupSimple", TLKLookup_target, TLKLookupSimple_hook);
+            CHECK_RESOLVED(TLKLookupSimple_orig);
+        }
+
+        {
+            auto const TLKLookup_target = Init.ResolveTyped<tTlkFileGetString>(TLKLOOKUP_ANOTHER_RVA);
+            CHECK_RESOLVED(TLKLookup_target);
+            TLKLookup_orig = (tTlkManagerGetString*)Init.InstallHook("UBioTlkManager::TLKLookup", TLKLookup_target, TLKLookup_hook);
+            CHECK_RESOLVED(TLKLookup_orig);
+        }
 
         LEASI_INFO("Hooks initialized");
     }

@@ -222,4 +222,48 @@ namespace Autoload
 			callingObject->ObjectFlags |= EObjectFlags::RootSet; //RF_Root
 		}
 	}
+
+	// Used in a bunch of places in code but not a lot actually of invocations.
+	tTlkManagerGetSimpleString* TLKLookupSimple_orig = nullptr;
+	FString* TLKLookupSimple_hook(UBioTlkManager* globalTalkTable, FString* outStr, int stringID, BOOL bParse) {
+		auto result = FindTLKOverride(globalTalkTable, stringID, outStr, bParse);
+		if (result) {
+			return outStr;
+		}
+		
+		return TLKLookupSimple_orig(globalTalkTable, outStr, stringID, bParse);
+	}
+
+	tTlkManagerGetString* TLKLookup_orig = nullptr;
+	bool TLKLookup_hook(UBioTlkManager* globalTalkTable, int stringID, FString* outStr, BOOL bParse) {
+		auto result = FindTLKOverride(globalTalkTable, stringID, outStr, bParse);
+		if (result) {
+			return result;
+		}
+
+		return TLKLookup_orig(globalTalkTable, stringID, outStr, bParse);
+	}
+
+	tTlkFileGetString* TlkFileGetString = nullptr;
+	tTlkManagerTokenizeString* TlkManagerTokenizeString = nullptr;
+	bool FindTLKOverride(UBioTlkManager* globalTalkTable, int stringID, FString* outStr, BOOL bParse){
+		auto i = globalTalkTable->LoadedTLKs.Count();
+		while (i > 0) {
+			auto tlkFile = globalTalkTable->LoadedTLKs.GetData()[i - 1];
+			auto flags = tlkFile->ObjectFlags & 0x0020000000000000;
+			if (flags != 0) {
+				if (TlkFileGetString(tlkFile, stringID, outStr)) {
+					// We need to do the bParse one here too
+					if (bParse) {
+						TlkManagerTokenizeString(globalTalkTable, outStr);
+					}
+					return true;
+				}
+			}
+			i--;
+		}
+
+		return false;
+	}
+
 }
