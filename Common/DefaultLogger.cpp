@@ -98,13 +98,12 @@ namespace Common
 		try {
 			if (spdlog::default_logger())
 			{
-				spdlog::shutdown();
+				spdlog::default_logger()->flush();
+				spdlog::drop(spdlog::default_logger()->name());
 			}
 		}
 		catch (...) {
 			// Do nothing
 		}
-
-		::LESDK::TerminateConsole();
 	}
 }
