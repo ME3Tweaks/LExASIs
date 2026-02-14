@@ -230,6 +230,7 @@ add_subdirectory ("2DAPrinter")
 add_subdirectory ("DebugLogger")
 add_subdirectory ("AutoTOC")
 add_subdirectory ("DiscordIntegration")
+add_subdirectory ("AceSlammer")
 
 # set_property (DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "TextureOverride-LE3")
 
