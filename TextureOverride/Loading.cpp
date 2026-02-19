@@ -25,6 +25,13 @@ namespace TextureOverride
         fs::path const DlcFolder{ k_searchFoldersRoot };
         LEASI_INFO(L"looking for dlc roots in {}", DlcFolder.c_str());
 
+        if (!fs::exists(DlcFolder))
+        {
+            LEASI_INFO(L"dlc root directory does not exist, skipping manifest load");
+            g_manifestsFinishedLoading = true;
+            return;
+        }
+
         FString MountLoadError{};
 
         for (fs::directory_entry const& DlcRoot : fs::directory_iterator{ DlcFolder })
