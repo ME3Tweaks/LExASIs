@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"TextureOverride"
 
 
-#define ASI_VERSION 3
+#define ASI_VERSION 4
 // String that appears in the file description and part of SPI
 #if defined(SDK_TARGET_LE1) || defined(SDK_TARGET_LE2)
 #define ASI_DESCRIPTION "Texture Override enables texture overrides at runtime via Binary Texture Packages."
