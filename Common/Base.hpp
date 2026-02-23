@@ -46,10 +46,13 @@
 namespace Common
 {
     void InitializeLoggerDefault();
+
+#if !defined(SDK_TARGET_LEL)
     /**
      * @brief   Initializes the Globals that are required for basic SDK functionality
      */
     void InitializeRequiredGlobals(::LESDK::Initializer& Init);
+#endif
 }
 
 namespace Details
