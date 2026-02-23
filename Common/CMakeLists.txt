@@ -22,3 +22,17 @@ asi_target (Common
   VLINKS
     "LESDK"
 )
+
+asi_target (Common
+  STATIC
+  GAMES "LEL"
+  SOURCES
+    "Base.cpp"
+    "Base.hpp"
+    "DefaultLogger.hpp"
+    "DefaultLogger.cpp"
+  LINKS
+    "spdlog"
+  VLINKS
+    "LESDK"
+)
