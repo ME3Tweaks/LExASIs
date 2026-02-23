@@ -27,6 +27,7 @@ endif ()
 option (LEASI_BUILD_LE1 "Build LE1 targets?" ON)
 option (LEASI_BUILD_LE2 "Build LE2 targets?" ON)
 option (LEASI_BUILD_LE3 "Build LE3 targets?" ON)
+option (LEASI_BUILD_LEL "Build LEL targets?" ON)
 
 if (CMAKE_GENERATOR MATCHES "Visual Studio 17 2022" OR CMAKE_GENERATOR MATCHES "Visual Studio 18 2026")
   set (LEASI_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/Build/$<CONFIG>)
@@ -83,7 +84,7 @@ endif ()
 
 # Internal function that implements ASI_TARGET.
 function (_ASI_TARGET_IMPL PROJ_TARGET PROJ_TYPE)
-  cmake_parse_arguments (PROJ "LE1;LE2;LE3" "" "SOURCES;LINKS;VLINKS" ${ARGN})
+  cmake_parse_arguments (PROJ "LE1;LE2;LE3;LEL" "" "SOURCES;LINKS;VLINKS" ${ARGN})
 
   set (LIBRARY_LINKS)
 
@@ -97,6 +98,8 @@ function (_ASI_TARGET_IMPL PROJ_TARGET PROJ_TYPE)
     set (PROJ_SUFFIX "LE2")
   elseif (PROJ_LE3)
     set (PROJ_SUFFIX "LE3")
+  elseif (PROJ_LEL)
+    set (PROJ_SUFFIX "LEL")
   endif ()
 
   foreach (PROJ_VLINK IN LISTS PROJ_VLINKS)
@@ -113,7 +116,11 @@ function (_ASI_TARGET_IMPL PROJ_TARGET PROJ_TYPE)
     add_library (${PROJ_TARGET} SHARED ${PROJ_SOURCES})
   endif ()
 
+if (PROJ_LEL)
+  target_compile_definitions (${PROJ_TARGET} PUBLIC ${LEASI_COMPILE_DEFINITIONS} SDK_TARGET_LEL)
+else ()
   target_compile_definitions (${PROJ_TARGET} PUBLIC ${LEASI_COMPILE_DEFINITIONS})
+endif()
   target_compile_options (${PROJ_TARGET} PUBLIC ${LEASI_COMPILE_OPTIONS})
   target_include_directories (${PROJ_TARGET} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
   target_link_libraries (${PROJ_TARGET} PUBLIC ${LIBRARY_LINKS})
@@ -139,7 +146,7 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
     message (FATAL_ERROR "!! Invalid ASI target type: ${PROJ_TARGET}")
   endif ()
 
-  set (VALID_GAMES "LE1" "LE2" "LE3")
+  set (VALID_GAMES "LE1" "LE2" "LE3" "LEL")
   foreach (PROJ_GAME IN LISTS PROJ_GAMES)
     if (NOT ${PROJ_GAME} IN_LIST VALID_GAMES)
       message (FATAL_ERROR "!! Invalid target game: ${PROJ_GAME}")
@@ -204,6 +211,27 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
         )
       endif ()
     endif ()
+  
+    if (PROJ_GAME STREQUAL "LEL" AND LEASI_BUILD_LEL)
+      _asi_target_impl (${PROJ_TARGET} ${PROJ_TYPE} LEL SOURCES ${PROJ_SOURCES} LINKS ${PROJ_LINKS} VLINKS ${PROJ_VLINKS})
+
+      if (DEFINED ENV{LEASI_GAMEL_WIN64} AND PROJ_TYPE STREQUAL "SHARED")
+        set (LEASI_GAMEL_WIN64 "$ENV{LEASI_GAMEL_WIN64}")
+        message ("-- User-provided Mass Effect Launcher (LE) folder: ${LEASI_GAMEL_WIN64}")
+
+        set (COPY_SOURCE $<TARGET_FILE:${PROJ_TARGET}-LEL>)
+        set (COPY_DEST ${LEASI_GAMEL_WIN64}/ASI/$<TARGET_FILE_NAME:${PROJ_TARGET}-LEL>)
+
+        add_custom_command (TARGET ${PROJ_TARGET}-LEL POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${COPY_SOURCE} ${COPY_DEST})
+
+        set_target_properties (${PROJ_TARGET}-LEL PROPERTIES
+          VS_DEBUGGER_COMMAND "${LEASI_GAMEL_WIN64}/MassEffectLauncher.exe"
+          VS_DEBUGGER_COMMAND_ARGUMENTS ""
+          VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAMEL_WIN64}"
+        )
+      endif ()
+    endif ()
+  
   endforeach ()
 endfunction ()
 
