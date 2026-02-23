@@ -157,8 +157,9 @@ namespace TextureOverride
 				// Find *.tfc files in the cookedpcconsole folder
 #if defined(SDK_TARGET_LE3)
 				// LE3 DLC requires Textures_DLC_MOD_XXX so we keep that same requirement here as a prefix
-				std::wstring tfcName = std::format(L"Textures_{}*.tfc", dlcName.Chars());
-				auto tfcSearchPattern = dlcCookedPath / tfcName;
+				// 02/22/2026 - Also support Lighting_, CharTextures_
+				std::wstring tfcNamePattern = std::format(L"*_{}*.tfc", dlcName.Chars());
+				auto tfcSearchPattern = dlcCookedPath / tfcNamePattern;
 #else
 				// LE2 DLC can be named anything
 				auto tfcSearchPattern = dlcCookedPath / L"*.tfc";
@@ -167,8 +168,19 @@ namespace TextureOverride
 				TArray<FString> tfcFiles{};
 				InternalFindFiles(*GFileManager, &tfcFiles, tfcSearchPattern.c_str(), true, false, 2);
 				for (unsigned int k = 0; k < tfcFiles.Count(); k++) {
+
 					// Register each TFC using full path
+#if defined (SDK_TARGET_LE3)
+					auto tfcName = tfcFiles.GetData()[k];
+					if (!tfcName.StartsWith(L"Textures_DLC_") && !tfcName.StartsWith(L"Lighting_DLC_") && !tfcName.StartsWith(L"CharTextures_DLC_")) {
+						// Not a supported TFC name
+						LEASI_WARN(L"Skipping registration of unsupported DLC mod TFC name: {}", tfcName.Chars());
+						continue;
+					}
+					auto fullTfcPath = dlcCookedPath / tfcName.Chars();
+#else 
 					auto fullTfcPath = dlcCookedPath / tfcFiles.GetData()[k].Chars();
+#endif
 					LEASI_INFO(L"Registering DLC mod TFC: {}", fullTfcPath.c_str());
 					FString tfcPath(fullTfcPath.c_str());
 					RegisterTFC(&tfcPath);
