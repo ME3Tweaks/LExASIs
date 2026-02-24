@@ -259,6 +259,7 @@ add_subdirectory ("DebugLogger")
 add_subdirectory ("AutoTOC")
 add_subdirectory ("DiscordIntegration")
 add_subdirectory ("AceSlammer")
+add_subdirectory ("ShaderClient")
 add_subdirectory ("MilanLauncher")
 
 # set_property (DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "TextureOverride-LE3")
