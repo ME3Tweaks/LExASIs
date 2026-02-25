@@ -52,6 +52,8 @@ namespace ShaderClient
 
 	tGetTlkString* GetTlkString_orig = nullptr;
 
+	tShowLoadMessage* ShowLoadMessage_orig = nullptr;
+
 	FArchiveProxy GetStringWithObjectWriterProxy(FArchive& inArchive) {
 		// Copy strings VTable
 		memcpy((void*)&NamesAndObjectsAsStrings_VTable, StringArchiveProxyVTableStart, 0xE0);
@@ -172,6 +174,7 @@ namespace ShaderClient
 			}
 		}
 
+		UpdateCurrentAction(L"");
 		return result;
 	}
 
@@ -182,6 +185,7 @@ namespace ShaderClient
 		FString name;
 		FMaterial_GetFriendlyName(material, &name);
 		LEASI_INFO(L"Trying to compile shader {}", name);
+		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars()));
 
 		std::vector<ShaderCompileCombo> comboList{};
 		GetShaderTypesToCompile(material, comboList);
@@ -252,11 +256,26 @@ namespace ShaderClient
 			return outStr;
 		}
 		else if (id == 170447) { // Loading widget Loading
-			*outStr = L"Compiling Shaders";
+			if (currentAction.empty()) {
+				return GetTlkString_orig(gTalkTable, id, outStr, something, somethingElse);
+			}
+
+			FString message = currentAction.c_str();
+			*outStr = message;
 			return outStr;
 		}
 		else {
 			return GetTlkString_orig(gTalkTable, id, outStr, something, somethingElse);
 		}
+	}
+
+	// We cache this on first hook
+	void* showLoadMessage_parm1 = nullptr;
+	void ShowLoadMessage_hook(void* unknown, int param_2, UINT stringId, int someBool) {
+		if (showLoadMessage_parm1 == nullptr)
+		{
+			showLoadMessage_parm1 = unknown;
+		}
+		ShowLoadMessage_orig(unknown, param_2, stringId, someBool);
 	}
 }

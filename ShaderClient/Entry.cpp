@@ -18,6 +18,11 @@ SPI_IMPLEMENT_ATTACH
 	::ShaderClient::InitializeGlobals(Init);
 	::ShaderClient::InitializeHooks(Init);
 	LEASI_INFO("Welcome to Milan Shader Client");
+
+
+	LEASI_INFO("Size of FArchive: {}", sizeof(FArchive));
+	LEASI_INFO("Size of FMemoryArchive: {}", sizeof(FMemoryArchiveBase));
+
 	return true;
 }
 
@@ -37,9 +42,17 @@ namespace ShaderClient
 
 #define HOOK_PATTERN_POSTHOOK(NAME, SIG, POSTHOOK) \
 		do { \
-	auto const target = Init.ResolveTyped<SIG>(::LESDK::Address::FromPostHook(POSTHOOK)); \
-	CHECK_RESOLVED(target); \
-	NAME##_orig = (SIG*)Init.InstallHook(#NAME, target, NAME##_hook); \
+	auto const NAME##_target = Init.ResolveTyped<SIG>(::LESDK::Address::FromPostHook(POSTHOOK)); \
+	CHECK_RESOLVED(NAME##_target); \
+	NAME##_orig = (SIG*)Init.InstallHook(#NAME, NAME##_target, NAME##_hook); \
+	CHECK_RESOLVED(NAME##_orig); \
+		} while (0);
+
+#define HOOK_RVA(NAME, SIG, RVA) \
+		do { \
+	auto const NAME##_target = Init.ResolveTyped<SIG>(RVA); \
+	CHECK_RESOLVED(NAME##_target); \
+	NAME##_orig = (SIG*)Init.InstallHook(#NAME, NAME##_target, NAME##_hook); \
 	CHECK_RESOLVED(NAME##_orig); \
 		} while (0);
 
@@ -68,6 +81,8 @@ namespace ShaderClient
 
 		// Hooked this way to allow hook sharing
 		HOOK_PATTERN_POSTHOOK(GetTlkString, tGetTlkString,/*"89 54 24 10 4c*/ "8b dc 57 41 54 41 55 41 56 41 57 48 83 ec 60 49 c7 43 a8 fe ff ff ff");
+
+		HOOK_RVA(ShowLoadMessage, tShowLoadMessage, LEASI_RVA(0xc23830))
 #if defined(NOTDEFINED)
 
 		// uncomment to make _setSomething_hook break. The game crashes in here after a few iterations

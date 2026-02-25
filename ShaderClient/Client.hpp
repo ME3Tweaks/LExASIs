@@ -3,6 +3,9 @@
 #include "ShaderClient/MilanShaderCompiler.hpp"
 namespace ShaderClient
 {
+	extern std::wstring currentAction;
+	void UpdateCurrentAction(std::wstring_view newAction);
+
 	void SaveShaderCache(UShaderCache* shaderCache);
 	void SaveMaterialBinary(FMaterialResource* material);
 

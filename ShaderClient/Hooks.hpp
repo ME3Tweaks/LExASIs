@@ -178,9 +178,9 @@ namespace ShaderClient
     extern tGetTlkString* GetTlkString; // @ 7ff74a927400 LE3
     extern tGetTlkString* GetTlkString_orig; // @ 7ff74a927400 LE3
 
-
-
-
+    using tShowLoadMessage = void(void* unknown, int param_2, UINT stringId, int somebool);
+    extern tShowLoadMessage* ShowLoadMessage_orig;
+    extern void* showLoadMessage_parm1;
 
     // Functions
 
@@ -192,4 +192,5 @@ namespace ShaderClient
     bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList);
     UBOOL FMaterialShaderMap_Compile_hook(FMaterialShaderMap* map, FMaterialResource* material, FStaticParameterSet* InParameters, wchar_t* materialCode, FUniformExpressionSet* InUniformExpressionSet, EShaderPlatform platform, TArray<FString>* outErrors, BOOL bSilent, BOOL bDebugDump);
     FString* GetTlkString_hook(void* gTalkTable, int id, FString* outStr, int something, int somethingElse);
+    void ShowLoadMessage_hook(void* unknown, int param_2, UINT stringId, int someBool);
 }

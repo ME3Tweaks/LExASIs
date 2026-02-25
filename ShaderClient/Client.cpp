@@ -13,12 +13,26 @@ namespace ShaderClient
 	BYTE shaderBuffer[4096 * 1024]; // 4MB buffer for shader bytecode
 	char errorMessage[512]; // 512 bytes for error message.
 	NamedParameterAllocation parameterAllocationBuffer[256]; // There better not be more than this...!
+	std::wstring currentAction;
+
+	void UpdateLoadScreenMessage() {
+		if (showLoadMessage_parm1 != nullptr && ShowLoadMessage_orig != nullptr) {
+			ShowLoadMessage_orig(showLoadMessage_parm1, 1, 170447, 0);
+		}
+	}
+
+	void UpdateCurrentAction(std::wstring_view newAction) {
+		currentAction = newAction;
+		UpdateLoadScreenMessage();
+	}
 
 	/// <summary>
 	/// Saves a ShaderCache export to a string-based archive.
 	/// </summary>
 	/// <param name="shaderCache"></param>
 	void SaveShaderCache(UShaderCache* shaderCache) {
+		UpdateCurrentAction(L"Saving Shader Cache");
+
 		auto pipeHandle = CreateHostPipe();
 		DWORD numBytesWritten = 0;
 
@@ -36,8 +50,12 @@ namespace ShaderClient
 		// Wrap writer in names-only serializer
 		FArchiveProxy ProxyArchive;
 		CreateArchiveProxy((FArchiveProxy*)&ProxyArchive, &Writer);
+		auto obj = &ProxyArchive;
+		auto vtable1 = *((long*)GetVTable((void***)&ProxyArchive));
 		SetVTable((void**)&ProxyArchive, StringArchiveProxyVTableStart);
-
+		auto vtable2 = GetVTable((void***)&ProxyArchive);
+		LEASI_UNUSED(obj);
+		LEASI_UNUSED_2(vtable1, vtable2);
 		SerializeUShaderCache(shaderCache, (FArchive*)&ProxyArchive);
 
 		// Send shader cache size to follow
@@ -54,6 +72,11 @@ namespace ShaderClient
 	}
 
 	void SaveMaterialBinary(FMaterialResource* material) {
+		FString outStr;
+		auto name = FMaterial_GetFriendlyName(material, &outStr);
+
+		UpdateCurrentAction(std::format(L"Saving {}", name->Chars()));
+
 		auto pipeHandle = CreateHostPipe();
 		DWORD numBytesWritten = 0;
 
@@ -61,11 +84,8 @@ namespace ShaderClient
 		int cmd_sc = 4;
 		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
-		// Serialize name of incoming material.
-		FString outStr;
-		auto name = FMaterial_GetFriendlyName(material, &outStr);
-		LEASI_UNUSED(name);
-		int len = (outStr.Length() - 1) * 2; // Get rid of \0
+		// Serialize name of outgoing material.		
+		int len = outStr.Length() * 2;
 		//std::cout << "Send Mat Name Size: " << len << std::endl;
 		WriteFile(pipeHandle, &len, 4, &numBytesWritten, NULL);
 		WriteFile(pipeHandle, outStr.Chars(), len, &numBytesWritten, NULL);
@@ -97,7 +117,7 @@ namespace ShaderClient
 		Writer.VTable->Destructor(&Writer);
 	}
 
-	bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList) {
+	bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList) {		
 		auto pipeHandle = CreateHostPipe();
 
 		int outShaderSize = 0;
