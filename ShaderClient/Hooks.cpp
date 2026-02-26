@@ -182,9 +182,15 @@ namespace ShaderClient
 	{
 		LEASI_UNUSED_4(bDebugDump, bSilent, outErrors, platform);
 
+		SaveMaterialHLSL(material, materialCode);
+		return false;
+
+
+		auto materialObjName = material->Material->GetFullName();
+
 		FString name;
 		FMaterial_GetFriendlyName(material, &name);
-		LEASI_INFO(L"Trying to compile shader {}", name);
+		LEASI_INFO(L"Trying to compile shader {}", materialObjName);
 		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars()));
 
 		std::vector<ShaderCompileCombo> comboList{};
