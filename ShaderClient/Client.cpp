@@ -106,7 +106,7 @@ namespace ShaderClient
 	}
 
 	void SaveMaterialBinary(FMaterialResource* material) {
-		auto materialObjName = material->Material->GetFullName();
+		auto materialObjName = material->Material->GetFullPath();
 
 		FString outStr;
 		auto name = FMaterial_GetFriendlyName(material, &outStr);
