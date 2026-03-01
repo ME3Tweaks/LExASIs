@@ -31,6 +31,7 @@ namespace ShaderClient {
     };
 
     using tMilanCompileShader = int(const char* baseShaderName, const char* materialHlsl, const char* vertexFactoryName, const wchar_t* includesDirectory, D3D_SHADER_MACRO* macros, const char* entryPoint, const char* shaderType,
+        int compileFlags,
         int& outShaderBytesSize,
         BYTE& outShaderBytes,
         int& outErrorMsgSize,

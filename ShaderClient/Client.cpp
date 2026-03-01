@@ -1,3 +1,4 @@
+#include "d3dcompiler.h"
 #include "LESDK/Common/FArchive.hpp"
 #include "ShaderClient/Client.hpp"
 #include "ShaderClient/Hooks.hpp"
@@ -174,6 +175,7 @@ namespace ShaderClient
 				&Macros.front(),
 				ws2s(scc->shaderType->FunctionName).c_str(),
 				shaderType,
+				D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY | D3DCOMPILE_OPTIMIZATION_LEVEL3, // compile flags
 				outShaderSize,
 				shaderBuffer[0],
 				outErrorSize,

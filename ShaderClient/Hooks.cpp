@@ -39,7 +39,7 @@ namespace ShaderClient
 
 	tCreateArchiveProxy* CreateArchiveProxy = nullptr;
 	void* StringArchiveProxyVTableStart = nullptr;
-
+	 
 	void* MemoryArchiveWriterVTableStart = nullptr;
 
 	tSerializeUShaderCache* SerializeUShaderCache = nullptr;
@@ -111,7 +111,7 @@ namespace ShaderClient
 
 			// Serialize the string.
 			memyOff = memy->Offset;
-			Ar->VTable->Serialize(Ar, val.data(), len);
+			Ar->VTable->Serialize(Ar, val.data(), len * sizeof(wchar_t)); // len * 2 cause this is an array of wchar_t
 			memyOff2 = memy->Offset;
 			memyDiff = memyOff2 - memyOff;
 			if (memyDiff != len) {
@@ -184,7 +184,7 @@ namespace ShaderClient
 
 		FString name;
 		FMaterial_GetFriendlyName(material, &name);
-		LEASI_INFO(L"Trying to compile shader {}", name);
+		LEASI_INFO(L"Trying to compile shader {}", material->Material->GetFullPath());
 		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars()));
 
 		std::vector<ShaderCompileCombo> comboList{};
