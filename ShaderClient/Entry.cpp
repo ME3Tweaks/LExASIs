@@ -83,6 +83,9 @@ namespace ShaderClient
 		HOOK_PATTERN_POSTHOOK(GetTlkString, tGetTlkString,/*"89 54 24 10 4c*/ "8b dc 57 41 54 41 55 41 56 41 57 48 83 ec 60 49 c7 43 a8 fe ff ff ff");
 
 		HOOK_RVA(ShowLoadMessage, tShowLoadMessage, LEASI_RVA(0xc23830))
+
+		HOOK_RVA(UObject_ProcessInternal, t_UObject_ProcessInternal, BUILTIN_PROCESSINTERNAL_RVA);
+		HOOK_RVA(PlayLoadingMovie, tPlayLoadingMovie, LEASI_RVA(0xbd9a70));
 #if defined(NOTDEFINED)
 
 		// uncomment to make _setSomething_hook break. The game crashes in here after a few iterations

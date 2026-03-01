@@ -182,6 +182,16 @@ namespace ShaderClient
     extern tShowLoadMessage* ShowLoadMessage_orig;
     extern void* showLoadMessage_parm1;
 
+    // For directing to the shader compiler levels.
+    using t_UObject_ProcessInternal = void(UObject* Context, FFrame* Stack, void* Result);
+    extern t_UObject_ProcessInternal* UObject_ProcessInternal_orig;
+    void UObject_ProcessInternal_hook(UObject* Context, FFrame* Stack, void* Result);
+
+    // For overriding the loading screen a shader uses
+    using tPlayLoadingMovie = void(USFXLoadMovieManager* param_1, FString* levelName, int param3);
+	extern tPlayLoadingMovie* PlayLoadingMovie_orig;
+    void PlayLoadingMovie_hook(USFXLoadMovieManager* param_1, FString* levelName, int param3);
+
     // Functions
 
     UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL debugDump);

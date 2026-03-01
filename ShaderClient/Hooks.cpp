@@ -2,6 +2,8 @@
 #include "ShaderClient/Hooks.hpp"
 #include "ShaderClient/Helpers.hpp"
 #include "ShaderClient/Client.hpp"
+#include "Common/Objects.hpp"
+#include "LESDK/Headers.hpp"
 #include <map>
 
 namespace ShaderClient
@@ -39,7 +41,7 @@ namespace ShaderClient
 
 	tCreateArchiveProxy* CreateArchiveProxy = nullptr;
 	void* StringArchiveProxyVTableStart = nullptr;
-	 
+
 	void* MemoryArchiveWriterVTableStart = nullptr;
 
 	tSerializeUShaderCache* SerializeUShaderCache = nullptr;
@@ -182,16 +184,16 @@ namespace ShaderClient
 	{
 		LEASI_UNUSED_4(bDebugDump, bSilent, outErrors, platform);
 
-		SaveMaterialHLSL(material, materialCode);
-		return false;
+		// Use to dump HLSL for compiled T3D materials
+		//SaveMaterialHLSL(material, materialCode);
+		//return false;
 
-
-		auto materialObjName = material->Material->GetFullName();
+		auto materialObjName = material->Material->GetFullPath();
 
 		FString name;
 		FMaterial_GetFriendlyName(material, &name);
 		LEASI_INFO(L"Trying to compile shader {}", materialObjName);
-		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars()));
+		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars())); // Use shortname
 
 		std::vector<ShaderCompileCombo> comboList{};
 		GetShaderTypesToCompile(material, comboList);
@@ -261,6 +263,10 @@ namespace ShaderClient
 			*outStr = L"Milan Shader Compiler";
 			return outStr;
 		}
+		if (id == 1) {
+			*outStr = L"Shader compile in progress...";
+			return outStr;
+		}
 		else if (id == 170447) { // Loading widget Loading
 			if (currentAction.empty()) {
 				return GetTlkString_orig(gTalkTable, id, outStr, something, somethingElse);
@@ -283,5 +289,60 @@ namespace ShaderClient
 			showLoadMessage_parm1 = unknown;
 		}
 		ShowLoadMessage_orig(unknown, param_2, stringId, someBool);
+	}
+
+	void RunConsoleCommand(const FString& command) {
+		auto playerController = ::Common::FindFirstObject<APlayerController>();
+		if (playerController) {
+			playerController->ConsoleCommand(command, 0);
+		}
+	}
+
+	t_UObject_ProcessInternal* UObject_ProcessInternal_orig = nullptr;
+	void UObject_ProcessInternal_hook(UObject* const Context, FFrame* const Stack, void* const Result)
+	{
+		static bool hasRunSplashCheck = false;
+
+		if (!hasRunSplashCheck) {
+			FString const FunctionName = Stack->Node->GetFullPath();
+			if (FunctionName.Contains(L"BioSeqAct_ShouldShowSplashSequence")) {
+				LEASI_INFO(L"ProcessInternal: {}", *FunctionName);
+				hasRunSplashCheck = true;
+
+				auto cli = std::wstring(GetCommandLineW());
+				if (cli.find(L"-ShaderCompile") != std::wstring::npos) {
+					LEASI_INFO(L"Loading shader compiler level");
+					RunConsoleCommand(L"at shadercompiler");
+				}
+				else if (cli.find(L"-ShaderViewer") != std::wstring::npos) {
+					LEASI_INFO(L"Loading shader viewer level");
+					RunConsoleCommand(L"at shaderviewer");
+				}
+			}
+		}
+		UObject_ProcessInternal_orig(Context, Stack, Result);
+	}
+
+	tPlayLoadingMovie* PlayLoadingMovie_orig = nullptr;
+	void PlayLoadingMovie_hook(USFXLoadMovieManager* param_1, FString* levelName, int param3) {
+		static bool addedTip = false;
+		if (levelName != nullptr) {
+			if (levelName->Equals(L"shadercompiler", true)) {
+				if (!addedTip) {
+					// Doesn't work right now
+					//FLoadingLevelTip* newLoadingTip = (FLoadingLevelTip*)sdkCalloc(sizeof(FLoadingLevelTip));
+					//FLoadingTip* newTip = (FLoadingTip*)sdkCalloc(sizeof(FLoadingTip));
+					//newTip->GenericTip = 1;
+					//newLoadingTip->LevelName = FString(L"shadercompiler");
+					//newLoadingTip->UseRandomTip = false;
+					//newLoadingTip->Tip = *newTip;
+					//param_1->AreaLoadTips.Reserve(param_1->AreaLoadTips.Count() + 1); // dies
+					//param_1->AreaLoadTips.Add(*newLoadingTip);
+					addedTip = true;
+				}
+			}
+		}
+
+		PlayLoadingMovie_orig(param_1, levelName, param3);
 	}
 }
