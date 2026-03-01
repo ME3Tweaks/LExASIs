@@ -39,7 +39,7 @@ namespace ShaderClient
 
 		// Send the command.
 		int cmd_sc = 1;
-		// std::cout << "Send ShaderCacheCommand\n";
+		LEASI_DEBUG("Send ShaderCacheCommand");
 		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
 		// Serialize the shader cache
@@ -60,19 +60,54 @@ namespace ShaderClient
 		SerializeUShaderCache(shaderCache, (FArchive*)&ProxyArchive);
 
 		// Send shader cache size to follow
-		// std::cout << std::dec << "Send ShaderCache Size: " << &Writer.Data.Count << std::endl;
+		LEASI_DEBUG("Send ShaderCache Size: {}", Writer.Data.Count());
 		auto count = Writer.Data.Count();
 		WriteFile(pipeHandle, &count, 4, &numBytesWritten, NULL);
 
 		// Write Shader Data to pipe.
 		// std::cout << "Send ShaderCache\n";
+		LEASI_DEBUG("Send ShaderCache");
 		WriteFile(pipeHandle, Writer.Data.GetData(), Writer.Data.Count(), &numBytesWritten, NULL);
 
 		// Destroy Writer
 		Writer.VTable->Destructor(&Writer);
 	}
 
+	void SaveMaterialHLSL(FMaterialResource* material, wchar_t* materialCode) {
+		auto materialObjName = material->Material->GetFullPath();
+
+		FString outStr;
+		auto name = FMaterial_GetFriendlyName(material, &outStr);
+		UpdateCurrentAction(std::format(L"Sending {}", name->Chars()));
+		LEASI_INFO(L"Send HLSL for {}", materialObjName);
+		auto pipeHandle = CreateHostPipe();
+		DWORD numBytesWritten = 0;
+
+		// Send the command.
+		int cmd_sc = 5;
+		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
+
+		// Send material name string size to follow
+		auto matNameStrSize = (materialObjName.Length()) * 2;
+		WriteFile(pipeHandle, &matNameStrSize, 4, &numBytesWritten, NULL);
+
+		// Write material name string to follow
+		WriteFile(pipeHandle, materialObjName.Chars(), (DWORD)matNameStrSize, &numBytesWritten, NULL);
+
+
+		// Send HLSL string size to follow
+		std::wstring hlslStr(materialCode);
+		auto hlslStrSize = (hlslStr.length() + 1) * 2;
+		WriteFile(pipeHandle, &hlslStrSize, 4, &numBytesWritten, NULL);
+
+		// Write HLSL string to pipe.
+		WriteFile(pipeHandle, hlslStr.data(), (DWORD)hlslStrSize, &numBytesWritten, NULL);
+		UpdateCurrentAction(L"");
+	}
+
 	void SaveMaterialBinary(FMaterialResource* material) {
+		auto materialObjName = material->Material->GetFullName();
+
 		FString outStr;
 		auto name = FMaterial_GetFriendlyName(material, &outStr);
 
@@ -86,10 +121,10 @@ namespace ShaderClient
 		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
 		// Serialize name of outgoing material.		
-		int len = outStr.Length() * 2;
+		int len = materialObjName.Length() * 2;
 		//std::cout << "Send Mat Name Size: " << len << std::endl;
 		WriteFile(pipeHandle, &len, 4, &numBytesWritten, NULL);
-		WriteFile(pipeHandle, outStr.Chars(), len, &numBytesWritten, NULL);
+		WriteFile(pipeHandle, materialObjName.Chars(), len, &numBytesWritten, NULL);
 
 
 		// Serialize the material binary.
