@@ -17,9 +17,15 @@ namespace ShaderClient
 	std::wstring currentAction;
 
 	void UpdateLoadScreenMessage() {
-		if (showLoadMessage_parm1 != nullptr && ShowLoadMessage_orig != nullptr) {
-			ShowLoadMessage_orig(showLoadMessage_parm1, 1, 170447, 0);
+		auto interaction = Common::FindFirstObject<USFXGUIInteraction>();
+		if (interaction)
+		{
+			auto saveLoadWidget = interaction->eventGetSaveLoadWidget();
+			if (saveLoadWidget)
+			{
+				saveLoadWidget->ShowLoadingMessage(FALSE, 170447);
 		}
+	}
 	}
 
 	void UpdateCurrentAction(std::wstring_view newAction) {
