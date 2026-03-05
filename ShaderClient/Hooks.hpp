@@ -8,7 +8,11 @@
 
 namespace ShaderClient
 {
-    // 
+    // If false we should not compile shaders in this session (preview mode)
+    extern bool EnableShaderCompile;
+
+    // If true we should boot into shader compiler level on start
+    extern bool BootShaderCompilerLevel;
 
     using tFGetMaterialFriendlyName = FString* (void* fmaterial, FString* OutStr);
     extern tFGetMaterialFriendlyName* FMaterial_GetFriendlyName; // (tFGetMaterialFriendlyName)0x7ff74ab4dec0; // RVA 2BDEC0
@@ -178,10 +182,6 @@ namespace ShaderClient
     extern tGetTlkString* GetTlkString; // @ 7ff74a927400 LE3
     extern tGetTlkString* GetTlkString_orig; // @ 7ff74a927400 LE3
 
-    using tShowLoadMessage = void(void* unknown, int param_2, UINT stringId, int somebool);
-    extern tShowLoadMessage* ShowLoadMessage_orig;
-    extern void* showLoadMessage_parm1;
-
     // For directing to the shader compiler levels.
     using t_UObject_ProcessInternal = void(UObject* Context, FFrame* Stack, void* Result);
     extern t_UObject_ProcessInternal* UObject_ProcessInternal_orig;
@@ -191,6 +191,16 @@ namespace ShaderClient
     using tPlayLoadingMovie = void(USFXLoadMovieManager* param_1, FString* levelName, int param3);
 	extern tPlayLoadingMovie* PlayLoadingMovie_orig;
     void PlayLoadingMovie_hook(USFXLoadMovieManager* param_1, FString* levelName, int param3);
+
+    // For making sure game doesn't pause
+    using tReturnBool = BOOL();
+	extern tReturnBool* IsWindowFocused_orig;
+	BOOL IsWindowFocused_hook();
+
+    // For testing shader map completion
+    using tShaderMapIsComplete = UBOOL(void* map, FMaterial* material);
+	extern tShaderMapIsComplete* FShaderMap_IsComplete_orig;
+    UBOOL FShaderMap_IsComplete_hook(void* map, FMaterial* material);
 
     // Functions
 
@@ -202,5 +212,5 @@ namespace ShaderClient
     bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList);
     UBOOL FMaterialShaderMap_Compile_hook(FMaterialShaderMap* map, FMaterialResource* material, FStaticParameterSet* InParameters, wchar_t* materialCode, FUniformExpressionSet* InUniformExpressionSet, EShaderPlatform platform, TArray<FString>* outErrors, BOOL bSilent, BOOL bDebugDump);
     FString* GetTlkString_hook(void* gTalkTable, int id, FString* outStr, int something, int somethingElse);
-    void ShowLoadMessage_hook(void* unknown, int param_2, UINT stringId, int someBool);
+    // void ShowLoadMessage_hook(void* unknown, int param_2, UINT stringId, int someBool);
 }
