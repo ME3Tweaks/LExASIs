@@ -1,4 +1,6 @@
 #include "d3dcompiler.h"
+#include "Common/Objects.hpp"
+#include "Common/json.hpp"
 #include "LESDK/Common/FArchive.hpp"
 #include "ShaderClient/Client.hpp"
 #include "ShaderClient/Hooks.hpp"
@@ -6,8 +8,6 @@
 #include "ShaderClient/PipeHandler.hpp"
 #include "ShaderClient/MilanShaderCompiler.hpp"
 #include "ShaderClient/MilanShaderCompilerShared.h"
-
-#define PRINT_DEBUG_INFO false
 
 namespace ShaderClient
 {
@@ -24,13 +24,25 @@ namespace ShaderClient
 			if (saveLoadWidget)
 			{
 				saveLoadWidget->ShowLoadingMessage(FALSE, 170447);
+			}
 		}
-	}
 	}
 
 	void UpdateCurrentAction(std::wstring_view newAction) {
 		currentAction = newAction;
 		UpdateLoadScreenMessage();
+	}
+
+	/// <summary>
+	/// Writes sized data to a pipe by first writing the data size, then the data itself.
+	/// </summary>
+	/// <param name="pipeHandle">The handle to the pipe to write to.</param>
+	/// <param name="size">The size in bytes of the data to write.</param>
+	/// <param name="data">A pointer to the data buffer to write.</param>
+	void WriteSizedData(HANDLE pipeHandle, DWORD size, const void* data) {
+		DWORD numBytesWritten = 0;
+		WriteFile(pipeHandle, &size, 4, &numBytesWritten, NULL);
+		WriteFile(pipeHandle, data, size, &numBytesWritten, NULL);
 	}
 
 	/// <summary>
@@ -44,8 +56,8 @@ namespace ShaderClient
 		DWORD numBytesWritten = 0;
 
 		// Send the command.
-		int cmd_sc = 1;
-		LEASI_DEBUG("Send ShaderCacheCommand");
+		BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveShaderCache);
+		// LEASI_DEBUG("Send ShaderCacheCommand");
 		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
 		// Serialize the shader cache
@@ -65,15 +77,18 @@ namespace ShaderClient
 		LEASI_UNUSED_2(vtable1, vtable2);
 		SerializeUShaderCache(shaderCache, (FArchive*)&ProxyArchive);
 
-		// Send shader cache size to follow
-		LEASI_DEBUG("Send ShaderCache Size: {}", Writer.Data.Count());
+		// Send the shader cache
+		WriteSizedData(pipeHandle, Writer.Data.Count(), Writer.Data.GetData());
+
+		/*
+			LEASI_DEBUG("Send ShaderCache Size: {}", Writer.Data.Count());
 		auto count = Writer.Data.Count();
 		WriteFile(pipeHandle, &count, 4, &numBytesWritten, NULL);
 
 		// Write Shader Data to pipe.
 		// std::cout << "Send ShaderCache\n";
 		LEASI_DEBUG("Send ShaderCache");
-		WriteFile(pipeHandle, Writer.Data.GetData(), Writer.Data.Count(), &numBytesWritten, NULL);
+		WriteFile(pipeHandle, Writer.Data.GetData(), Writer.Data.Count(), &numBytesWritten, NULL);*/
 
 		// Destroy Writer
 		Writer.VTable->Destructor(&Writer);
@@ -90,24 +105,29 @@ namespace ShaderClient
 		DWORD numBytesWritten = 0;
 
 		// Send the command.
-		int cmd_sc = 5;
+		BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveMaterialHLSL);
 		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
-		// Send material name string size to follow
 		auto matNameStrSize = (materialObjName.Length()) * 2;
-		WriteFile(pipeHandle, &matNameStrSize, 4, &numBytesWritten, NULL);
+		WriteSizedData(pipeHandle, matNameStrSize, materialObjName.Chars());
+
+		// Send material name string size to follow
+		//WriteFile(pipeHandle, &matNameStrSize, 4, &numBytesWritten, NULL);
 
 		// Write material name string to follow
-		WriteFile(pipeHandle, materialObjName.Chars(), (DWORD)matNameStrSize, &numBytesWritten, NULL);
+		//WriteFile(pipeHandle, materialObjName.Chars(), (DWORD)matNameStrSize, &numBytesWritten, NULL);
 
 
 		// Send HLSL string size to follow
 		std::wstring hlslStr(materialCode);
 		auto hlslStrSize = (hlslStr.length() + 1) * 2;
+		WriteSizedData(pipeHandle, (DWORD) hlslStrSize, hlslStr.data());
+
+		/*
 		WriteFile(pipeHandle, &hlslStrSize, 4, &numBytesWritten, NULL);
 
 		// Write HLSL string to pipe.
-		WriteFile(pipeHandle, hlslStr.data(), (DWORD)hlslStrSize, &numBytesWritten, NULL);
+		WriteFile(pipeHandle, hlslStr.data(), (DWORD)hlslStrSize, &numBytesWritten, NULL);*/
 		UpdateCurrentAction(L"");
 	}
 
@@ -123,7 +143,7 @@ namespace ShaderClient
 		DWORD numBytesWritten = 0;
 
 		// Send the command.
-		int cmd_sc = 4;
+		BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveMaterialBinary);
 		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
 		// Serialize name of outgoing material.		
@@ -173,6 +193,7 @@ namespace ShaderClient
 		std::vector<D3D_SHADER_MACRO> Macros;
 		// Setup extra required macros here
 		AddMacro(Macros, "SM5_PROFILE", "1");
+		AddMacro(Macros, "SUPPORTS_DEPTH_TEXTURES", "1"); // Always set for SM5
 		if (scc->shaderType->Frequency == SF_VERTEX) {
 			AddMacro(Macros, "VERTEXSHADER", "1");
 		}
@@ -182,23 +203,20 @@ namespace ShaderClient
 
 		AddCustomMacros(material, *scc, Macros);
 
+		// Add Macros set by the engine itself
+		if (scc->vertexFactoryType != nullptr) {
+			//LEASI_TRACE(L"\t{}/{}", scc->shaderType->Name, scc->vertexFactoryType->Name);
+		}
+		else {
+			//LEASI_TRACE(L"\t{}", scc->shaderType->Name);
+		}
 		for (auto&& pair : env.macroDefinitions)
 		{
 			auto key = pair.Key;
 			auto value = pair.Value;
 
+			//LEASI_TRACE(L"\t\tAdding macro from env: {} = {}", key.Chars(), value.Chars());
 			AddMacroW(Macros, key.Chars(), value.Chars());
-
-			//char name[255];
-			//char def[10];
-
-			//D3D_SHADER_MACRO macro;
-			//wcstombs(name, key.Data, 255);
-			//wcstombs(def, value.Data, 10);
-			//macro.Name = name;
-			//macro.Definition = def;
-
-			//Macros.push_back(macro);
 		}
 
 		// Add Terminator
@@ -235,9 +253,7 @@ namespace ShaderClient
 
 			// ShaderCompileFailed command
 			DWORD numBytesWritten = 0;
-			int cmd_sc = 3;
-
-			// std::cout << "Writing error cmd\n";
+			BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::ShaderCompileFailed);
 			WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
 			// The actual error
@@ -247,14 +263,15 @@ namespace ShaderClient
 				ws2s(scc->shaderType->Name).c_str(),
 				errorMessage);
 			size_t len = strlen(formattedMessage) + 1;
+
 			// Inform ShaderHost of the error.
-			// std::cout << "Writing error message: " << formattedMessage << " \n";
 			WriteFile(pipeHandle, formattedMessage, (DWORD)len, &numBytesWritten, NULL);
 			LEASI_INFO("      {}", formattedMessage);
 		}
 
 		if (outShaderSize <= 0)
 			return false; // Can't do anything more
+
 
 		// Get information about shader.
 
@@ -299,9 +316,6 @@ namespace ShaderClient
 		for (int i = 0; i < outNumParameters; i++) {
 			FString key = parameterAllocationBuffer[i].Name;
 			FParameterAllocation value = parameterAllocationBuffer[i].Allocation;
-			/*if (wcscmp(key.Data, L"SceneColorTexture") == 0) {
-				int k = 0;
-			}*/
 			parameterMap.ParameterMap.Set(key, value);
 			/*auto found = parameterMap.ParameterMap.Find(key);
 			if (found == nullptr) {
@@ -311,17 +325,6 @@ namespace ShaderClient
 				std::wcout << L"IN LOOP OK - Found " << key.Data << L", Hash: " << GetTypeHash(key) << std::endl;
 			}*/
 		}
-
-		/*for (int i = 0; i < outNumParameters; i++) {
-			FString key = parameterAllocationBuffer[i].Name;
-			auto found = parameterMap.ParameterMap.Find(key);
-			if (found == nullptr) {
-				std::wcout << L"TMap.Set(" << i << L") isn't working! Didn't find " << key.Data << L" in the map. Hash: " << GetTypeHash(key) << L"\n";
-			}
-			else {
-				std::wcout << L"OK - Found " << key.Data << L", Hash: " << GetTypeHash(key) << std::endl;
-			}
-		}*/
 
 		if (PRINT_DEBUG_INFO) {
 			for (auto&& kvp : parameterMap.ParameterMap)
@@ -344,6 +347,45 @@ namespace ShaderClient
 		}
 
 		// std::cout << "      Successfully generated FShader!" << std::endl;
+		
+		// Enable to make debugging much easier
+		if (false)
+		{
+			// Generate a debug package to ship to ShaderHost
+			DWORD numBytesWritten = 0;
+			BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveDebugInfo);
+			WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
+			
+			// Metadata of package for ShaderHost
+			// Material Name
+			auto fullPath = material->Material->GetFullPath();
+			WriteSizedData(pipeHandle, fullPath.Length() * 2, fullPath.Chars());
+
+			// Build package
+			nlohmann::json debugInfo;
+			debugInfo["shaderType"] = ws2s(scc->shaderType->Name);
+			debugInfo["vertexFactoryType"] = scc->vertexFactoryType != nullptr
+				? nlohmann::json(ws2s(scc->vertexFactoryType->Name))
+				: nlohmann::json(nullptr);
+			debugInfo["sourceFilename"] = ws2s(scc->shaderType->SourceFilename);
+			debugInfo["functionName"] = ws2s(scc->shaderType->FunctionName);
+			debugInfo["materialHlsl"] = ws2s(env.materialHlslString);
+			debugInfo["profile"] = scc->shaderType->Frequency == SF_VERTEX ? "vs" : "ps";
+
+			nlohmann::json macrosArray = nlohmann::json::array();
+			for (const auto& macro : Macros) {
+				if (macro.Name == nullptr) break;
+				nlohmann::json macroObj;
+				macroObj["name"] = macro.Name;
+				macroObj["definition"] = macro.Definition;
+				macrosArray.push_back(macroObj);
+			}
+			debugInfo["macros"] = macrosArray;
+
+			std::string debugJson = debugInfo.dump();
+
+			WriteSizedData(pipeHandle, (DWORD)(debugJson.size()), debugJson.c_str());
+		}
 
 		// Add shader to the map
 		shaderList->emplace_back(shader);
