@@ -1,0 +1,58 @@
+#pragma once
+#include "ShaderClient/MilanShaderCompilerShared.h"
+#include "LESDK/Headers.hpp"
+#include "LESDK/Init.hpp"
+
+namespace ShaderClient {
+    enum EShaderFrequency {
+        SF_VERTEX = 0,
+        SF_PIXEL = 3,
+    };
+
+    enum EUsedCoords {
+        UsedCoord_None = 0x0,
+        UsedCoord_World = 0x1,
+        UsedCoord_View = 0x2,
+        UsedCoord_Local = 0x4,
+        UsedCoord_WorldPos = 0x8,
+    };
+
+    typedef struct _D3D_SHADER_MACRO
+    {
+        LPCSTR Name;
+        LPCSTR Definition;
+    } 	D3D_SHADER_MACRO;
+
+    class ShaderCompileCombo {
+    public:
+        FString name; // Name of material
+        FShaderType* shaderType;
+        FVertexFactoryType* vertexFactoryType; // null if not a mesh type
+    };
+
+    using tMilanCompileShader = int(const char* baseShaderName, const char* materialHlsl, const char* vertexFactoryName, const wchar_t* includesDirectory, D3D_SHADER_MACRO* macros, const char* entryPoint, const char* shaderType,
+        int compileFlags,
+        int& outShaderBytesSize,
+        BYTE& outShaderBytes,
+        int& outErrorMsgSize,
+        char& outErrorMsg);
+
+    using tMilanGetShaderInfo = void(int shaderBufferSize, void* shaderBuffer,
+        int& outInstructionCount,
+        int& outNumParameters,
+        NamedParameterAllocation* allocationArray //In/Out
+        );
+
+
+    /* Invoke to compile a shader */
+    extern tMilanCompileShader* MilanCompileShader;
+
+    /* Invoke to get instruction count of a shader and other info */
+    extern tMilanGetShaderInfo* MilanGetShaderInfo;
+
+    void LoadCompiler();
+
+    void AddMacro(std::vector<D3D_SHADER_MACRO>& Macros, const char* name, const char* definition);
+    void AddMacroW(std::vector<D3D_SHADER_MACRO>& Macros, const wchar_t* name, const wchar_t* definition);
+    void AddCustomMacros(FMaterialResource* material, ShaderCompileCombo& scc, std::vector<D3D_SHADER_MACRO>& macros);
+}
