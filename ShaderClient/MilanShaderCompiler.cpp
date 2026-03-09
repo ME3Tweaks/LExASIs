@@ -100,6 +100,30 @@ namespace ShaderClient {
 			AddMacro(macros, "MATERIAL_USE_SCREEN_DOOR_FADE", "1");
 		}
 
+		if (shaderTypeName.find(L"FFilterVSMPixelShader")) {
+			AddMacro(macros, "NUM_SAMPLES", "13");
+		}
+
+        // FLUTBlenderPixelShader<#>
+        if (shaderTypeName.find(L"FLUTBlenderPixelShader<") != std::wstring::npos) {
+            // Make blend count be the value of the thing between <>
+            size_t start = shaderTypeName.find(L'<');
+            size_t end = (start == std::wstring::npos) ? std::wstring::npos : shaderTypeName.find(L'>', start + 1);
+            if (start != std::wstring::npos && end != std::wstring::npos && end > start + 1) {
+                std::wstring inner = shaderTypeName.substr(start + 1, end - start - 1);
+                char* blendCount = wchar_to_char(inner.c_str());
+                // Note: memory allocated by wchar_to_char is intentionally left alive
+                // because D3D_SHADER_MACRO stores the pointer and expects it to remain valid.
+                AddMacro(macros, "BLENDCOUNT", blendCount);
+            }
+            else {
+                AddMacro(macros, "BLENDCOUNT", "1");
+            }
+        }
+
+		// FGFxPixelShader [SomethingTRUE/FALSE]
+		// Outputs SFX_OUTPUT_HDR
+
 
 		if (shaderTypeName.find(L"TAmbientOcclusionPixelShader") != std::string::npos) { // Ensure this type of shader...
 
@@ -155,6 +179,30 @@ namespace ShaderClient {
 		}
 		*/
 
+		
+		//if (strcmp(material->Material->Name.GetName(), "New_Glacier_02") == 0 &&
+		//	(
+		//		shaderTypeName == L"FSFXWorldNormalVertexShader" // ||
+		//		)) {
+		//	LEASI_INFO(L"{}", shaderTypeName);
+		//	//LEASI_INFO(L"  ");
+		//}
+
+		// It is either 2,7,8, not sure which one.
+		if (material->bUsesVertexColor != 0) {
+			AddMacro(macros, "MATERIAL_USES_VERTEX_COLOR", "1");
+		}
+
+		
+
+		if (shaderTypeName.find(L"FCustomVectorLightMapTexturePolicy") != std::string::npos) {
+			AddMacro(macros, "USING_VECTORLIGHTMAPS", "1");
+		}
+
+		if (shaderTypeName.find(L"FCustomVectorVertexLightMapPolicy") != std::string::npos) {
+			AddMacro(macros, "USING_VECTORLIGHTMAPS", "1");
+		}
+
 		if (shaderTypeName.find(L"FSignedDistanceField") != std::string::npos) {
 			AddMacro(macros, "STATICLIGHTING_SIGNEDDISTANCEFIELD", "1");
 		}
@@ -183,6 +231,27 @@ namespace ShaderClient {
 		if (shaderTypeName.find(L"FFXAA3BlendPixelShader") != std::string::npos) {
 			AddMacro(macros, "FXAA_PC", "1");
 			AddMacro(macros, "FXAA_HLSL_3", "1");
+		}
+
+		// Fog stuff
+		if (shaderTypeName.find(L"FNoDensityPolicy") != std::string::npos) {
+			AddMacro(macros, "FOGVOLUMEDENSITY_NONE", "1");
+		}
+
+		if (shaderTypeName.find(L"FConstantDensityPolicy") != std::string::npos) {
+			AddMacro(macros, "FOGVOLUMEDENSITY_CONSTANT ", "1");
+		}
+
+		if (shaderTypeName.find(L"FLinearHalfspaceDensityPolicy") != std::string::npos) {
+			AddMacro(macros, "FOGVOLUMEDENSITY_LINEARHALFSPACE", "1");
+		}
+
+		if (shaderTypeName.find(L"FSphereDensityPolicy") != std::string::npos) {
+			AddMacro(macros, "FOGVOLUMEDENSITY_SPHEREDENSITY", "1");
+		}
+
+		if (shaderTypeName.find(L"FConeDensityPolicy") != std::string::npos) {
+			AddMacro(macros, "FOGVOLUMEDENSITY_CONEDENSITY", "1");
 		}
 
 		// ========== BEGIN JSON-BASED POLICY MACRO DEFINITIONS ==========

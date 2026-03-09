@@ -15,6 +15,7 @@ namespace ShaderClient
 	char errorMessage[512]; // 512 bytes for error message.
 	NamedParameterAllocation parameterAllocationBuffer[256]; // There better not be more than this...!
 	std::wstring currentAction;
+	bool SendDebugPackages;
 
 	void UpdateLoadScreenMessage() {
 		auto interaction = Common::FindFirstObject<USFXGUIInteraction>();
@@ -121,7 +122,7 @@ namespace ShaderClient
 		// Send HLSL string size to follow
 		std::wstring hlslStr(materialCode);
 		auto hlslStrSize = (hlslStr.length() + 1) * 2;
-		WriteSizedData(pipeHandle, (DWORD) hlslStrSize, hlslStr.data());
+		WriteSizedData(pipeHandle, (DWORD)hlslStrSize, hlslStr.data());
 
 		/*
 		WriteFile(pipeHandle, &hlslStrSize, 4, &numBytesWritten, NULL);
@@ -179,7 +180,24 @@ namespace ShaderClient
 		Writer.VTable->Destructor(&Writer);
 	}
 
-	bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList) {		
+	DWORD GetCompileFlags(ShaderCompileCombo* scc) {
+		DWORD flags = D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+
+		auto name = std::wstring(scc->shaderType->Name);
+		// Not sure which shader type exactly sets flow control or if its based on some property existing...
+		if (name.find(L"FShadowVertexBufferPolicy") != std::wstring::npos) {
+			flags |= D3DCOMPILE_PREFER_FLOW_CONTROL;
+		}
+		//if (name.find(L"TLightPixelShaderFDirectionalLightPolicyFSignedDistanceFieldShadowTexturePolicy") != std::wstring::npos) {
+		if (name.find(L"TLightPixelShaderFDirectionalLightPolicy") != std::wstring::npos ||
+			name.find(L"FBranchingPCFProjectionPixelShader") != std::wstring::npos) {
+			flags |= D3DCOMPILE_PREFER_FLOW_CONTROL;
+		}
+
+		return flags;
+	}
+
+	bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList) {
 		auto pipeHandle = CreateHostPipe();
 
 		int outShaderSize = 0;
@@ -225,6 +243,34 @@ namespace ShaderClient
 		finalMacro.Definition = NULL;
 		Macros.push_back(finalMacro);
 
+		// Compile flags
+		DWORD compileFlags = GetCompileFlags(scc);
+		// LE3 seems to have ifdef'd this out
+		//for (UINT i = 0; i < env.compileFlags.Count(); i++) {
+		//	auto flag = env.compileFlags(i);
+		//	switch (flag) {
+		//	case 0:
+		//		// Prefer Flow Control
+		//		compileFlags |= D3DCOMPILE_PREFER_FLOW_CONTROL;
+		//		break;
+		//	case 1:
+		//		// Debug
+		//		compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+		//		break;
+		//	case 2:
+		//		// Avoid Flow Control
+		//		compileFlags |= D3DCOMPILE_AVOID_FLOW_CONTROL;
+		//		break;
+		//	case 3:
+		//		// Skip Validation
+		//		// Not implemented
+		//		break;
+		//	}
+		//	compileFlags |= flag;
+		//}
+
+
+
 		if (MilanCompileShader != nullptr) {
 			MilanCompileShader(
 				ws2s(scc->shaderType->SourceFilename).c_str(),
@@ -234,7 +280,7 @@ namespace ShaderClient
 				&Macros.front(),
 				ws2s(scc->shaderType->FunctionName).c_str(),
 				shaderType,
-				D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY | D3DCOMPILE_OPTIMIZATION_LEVEL3, // compile flags
+				compileFlags, // compile flags
 				outShaderSize,
 				shaderBuffer[0],
 				outErrorSize,
@@ -347,15 +393,15 @@ namespace ShaderClient
 		}
 
 		// std::cout << "      Successfully generated FShader!" << std::endl;
-		
+
 		// Enable to make debugging much easier
-		if (false)
+		if (SendDebugPackages)
 		{
 			// Generate a debug package to ship to ShaderHost
 			DWORD numBytesWritten = 0;
 			BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveDebugInfo);
 			WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
-			
+
 			// Metadata of package for ShaderHost
 			// Material Name
 			auto fullPath = material->Material->GetFullPath();

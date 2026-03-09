@@ -5,6 +5,7 @@
 #include "ShaderClient/Hooks.hpp"
 #include "ShaderClient/Helpers.hpp"
 #include "ShaderClient/SharedVersion.h"
+#include "Client.hpp"
 
 SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
@@ -62,6 +63,9 @@ namespace ShaderClient
 		}
 		if (cli.find(L"-ShaderCompile") != std::wstring::npos) {
 			BootShaderCompilerLevel = true;
+		}
+		if (cli.find(L"-SendDebugPackages") != std::wstring::npos) {
+			SendDebugPackages = true;
 		}
 
 		// INIT SHADER MAP - used to trigger hlsl compile when shader fails to load

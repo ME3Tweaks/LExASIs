@@ -16,6 +16,7 @@ namespace ShaderClient
 		SaveDebugInfo = 6
 	};
 	extern std::wstring currentAction;
+	extern bool SendDebugPackages;
 	void UpdateCurrentAction(std::wstring_view newAction);
 
 	void SaveShaderCache(UShaderCache* shaderCache);
