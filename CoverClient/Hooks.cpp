@@ -2,6 +2,10 @@
 #include "CoverClient/Hooks.hpp"
 #include "CoverClient/Helpers.hpp"
 #include "CoverClient/Client.hpp"
+#include "CoverClient/PathfindingGeneration.hpp"
+#include "CoverClient/CoverGeneration.hpp"
+#include "CoverClient/Classes/CoverLink.hpp"
+#include "CoverClient/Utilities/DebugTools.hpp"
 #include "Common/Objects.hpp"
 #include "LESDK/Headers.hpp"
 #include <map>
@@ -17,22 +21,22 @@ namespace CoverClient
 			*outStr = L"Milan Shader Compiler";
 			return outStr;
 		}*/
-		if (id == 1) {
-			*outStr = L"Shader compile in progress...";
-			return outStr;
-		}
-		else if (id == 170447) { // Loading widget Loading
-			if (currentAction.empty()) {
-				return GetTlkString_orig(gTalkTable, id, outStr, something, somethingElse);
-			}
+		//if (id == 1) {
+		//	*outStr = L"Shader compile in progress...";
+		//	return outStr;
+		//}
+		//else if (id == 170447) { // Loading widget Loading
+		//	if (currentAction.empty()) {
+		//		return GetTlkString_orig(gTalkTable, id, outStr, something, somethingElse);
+		//	}
 
-			FString message = currentAction.c_str();
-			*outStr = message;
-			return outStr;
-		}
-		else {
+		//	FString message = currentAction.c_str();
+		//	*outStr = message;
+		//	return outStr;
+		//}
+		//else {
 			return GetTlkString_orig(gTalkTable, id, outStr, something, somethingElse);
-		}
+		//}
 	}
 
 	void RunConsoleCommand(const FString& command) {
@@ -43,7 +47,6 @@ namespace CoverClient
 	}
 
 	bool BootShaderCompilerLevel = false;
-	bool EnableShaderCompile = true;
 	t_UObject_ProcessInternal* UObject_ProcessInternal_orig = nullptr;
 	void UObject_ProcessInternal_hook(UObject* const Context, FFrame* const Stack, void* const Result)
 	{
@@ -60,46 +63,10 @@ namespace CoverClient
 					LEASI_INFO(L"Loading shader compiler level");
 					RunConsoleCommand(L"at shadercompiler");
 				}
-				else if (cli.find(L"-ShaderPreview") != std::wstring::npos) {
-					EnableShaderCompile = false;
-					LEASI_INFO(L"Loading shader viewer level");
-					RunConsoleCommand(L"at shaderpreview");
-				}
 			}
 		}
 		UObject_ProcessInternal_orig(Context, Stack, Result);
 	}
-
-	tPlayLoadingMovie* PlayLoadingMovie_orig = nullptr;
-	void PlayLoadingMovie_hook(USFXLoadMovieManager* param_1, FString* levelName, int param3) {
-		static bool addedTip = false;
-		if (levelName != nullptr) {
-			if (levelName->Equals(L"shadercompiler", true)) {
-				if (!addedTip) {
-					param_1->AreaLoadTips.Clear();
-					// Doesn't work right now
-					FLoadingLevelTip newLoadingTip{};
-					newLoadingTip.Tip.GenericTip = 1;
-					newLoadingTip.LevelName = FString(L"shadercompiler");
-					newLoadingTip.UseRandomTip = false;
-					//param_1->AreaLoadTips.Reserve(param_1->AreaLoadTips.Count() + 1); // dies
-					param_1->AreaLoadTips.Add(newLoadingTip);
-					addedTip = true;
-				}
-			}
-		}
-
-		PlayLoadingMovie_orig(param_1, levelName, param3);
-	}
-
-	tReturnBool* IsWindowFocused_orig = nullptr;
-	BOOL IsWindowFocused_hook() {
-		// This is only hooked if with -ShaderCompile flag.
-		return TRUE;
-	}
-
-
-
 
 	t_UGameEngine_Exec* UGameEngine_Exec_orig = nullptr;
 	DWORD UGameEngine_Exec_hook(UGameEngine* const Context, WCHAR const* const Command, void* const Archive)
@@ -112,8 +79,17 @@ namespace CoverClient
 			{
 				LEASI_INFO(L"Beginning pathfinding network build");
 				FloodFillPathfindingNetwork();
-				LEASI_INFO(L"Beginning pathfinding network build");
+			} else if (CommandCopy.Contains(L"cc.buildcover"))
+			{
+				LEASI_INFO(L"Beginning cover generation from the camera POV");
+				GenerateCoverFromCamera();
+			}
+			else if (CommandCopy.Contains(L"cc.sendtohost"))
+			{
+				LEASI_INFO(L"Computing ReachSpecs...");
 				ComputeReachSpecs();
+				LEASI_INFO(L"Sending pathfinding data to CoverHost");
+				SendNodesToCoverHost();
 			}
 		}
 

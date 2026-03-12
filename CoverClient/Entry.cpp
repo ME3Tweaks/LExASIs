@@ -64,12 +64,6 @@ namespace CoverClient
 		// Hooked this way to allow hook sharing
 		HOOK_PATTERN_POSTHOOK(GetTlkString, tGetTlkString,/*"89 54 24 10 4c*/ "8b dc 57 41 54 41 55 41 56 41 57 48 83 ec 60 49 c7 43 a8 fe ff ff ff");
 
-		HOOK_RVA(PlayLoadingMovie, tPlayLoadingMovie, LEASI_RVA(0xbd9a70));
-
-		/*if (BootShaderCompilerLevel) {
-			HOOK_RVA(IsWindowFocused, tReturnBool, LEASI_RVA(0xad40e0));
-		}*/
-
 		// Used to redirect us to the shader compiler levels
 		HOOK_RVA(UObject_ProcessInternal, t_UObject_ProcessInternal, BUILTIN_PROCESSINTERNAL_RVA);
 
