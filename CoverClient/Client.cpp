@@ -27,5 +27,8 @@ namespace CoverClient
 		for (const auto& node : allNetworkNodes) {
 			node->WriteNodeToHost();
 		}
+
+		// Close the pipe so we have to re-establish a connection.
+		CloseHostPipe();
 	}
 }

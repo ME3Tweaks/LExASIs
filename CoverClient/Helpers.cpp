@@ -11,6 +11,7 @@ namespace CoverClient
     }
 
 	tStaticConstructObject* static_construct_object = nullptr;
+	tSingleLineCheck* SingleLineCheck = nullptr;
 
 	std::string ws2s(const std::wstring& wstr)
 	{

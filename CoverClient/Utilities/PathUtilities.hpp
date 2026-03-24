@@ -11,4 +11,5 @@ namespace CoverClient {
 	bool DoesSizeFitAtLocation(NavigationPoint* Nav, int Radius, int Height);
 	FRotator FVectorToFRotator(const FVector& v);
 	FVector CalculateLocationOffset(FVector MyLoc, FRotator MyRot, FVector TargetLoc);
+	void LoadExistingLevelNodes();
 }

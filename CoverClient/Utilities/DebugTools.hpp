@@ -9,4 +9,9 @@ namespace CoverClient {
 	void DrawDebugCube(AActor* actor, FVector location, float size, BYTE r, BYTE g, BYTE b, float distanceClip);
 	void DrawGeneratedPathfinding();
 	void DrawDebugTraces();
+	void DrawGameFireLinksForCurrentSlot();
+	void DrawClientFireLinksForCurrentSlot();
+	void DrawClientDangerNavsForCurrentSlot();
+	void DrawClientExposedCoverForCurrentSlot();
+	void DrawInteractionPositions();
 }

@@ -19,6 +19,10 @@ namespace CoverClient
 	using tStaticConstructObject = UObject* (UClass* InClass, UObject* InOuter, SFXName InName, EObjectFlags InFlags, UObject* InTemplate, void* Error, UObject* SubObjectRoot, void* InInstanceGraph);
 	extern tStaticConstructObject* static_construct_object;
 
+	// ! GWorld::SingleLineCheck hook for firing traces, the versions exposed to UnrealScript are insufficient
+	using tSingleLineCheck = bool(UWorld* self, FCheckResult* hitInfo, AActor* actor, FVector* end, FVector* start, DWORD traceFlags, FVector* extent, ULightComponent* unknown);
+	extern tSingleLineCheck* SingleLineCheck;
+
 	template<typename T>
 	T* StaticConstructObject(UObject* InOuter, SFXName InName, EObjectFlags InFlags = static_cast<EObjectFlags>(0), UObject* InTemplate = nullptr, UObject* SubObjectRoot = nullptr)
 	{

@@ -5,6 +5,7 @@
 #include "CoverClient/PathfindingGeneration.hpp"
 #include "CoverClient/Utilities/PathUtilities.hpp"
 #include "CoverClient/Classes/PathfindingNode.hpp"
+#include "Classes/ReachSpecs.hpp"
 
 namespace CoverClient {
 
@@ -267,12 +268,26 @@ namespace CoverClient {
                     const auto& cylinderSize = CollisionCylinderSizes[csIdx];
                     auto hitActor = player->Trace(allNetworkNodes[j]->position, allNetworkNodes[i]->position, 0, cylinderSize, TRUE, &hitLocation, &hitNormal, nullptr);
                     if (hitActor == nullptr) {
+                        // Avoid adding duplicate reachspecs: ensure i doesn't already have a reachspec to j
+                        int destIndex = static_cast<int>(j);
+                        bool alreadyExists = false;
+                        for (const auto& rs : allNetworkNodes[i]->reachableIndices) {
+                            if (rs.index == destIndex) { 
+                                alreadyExists = true; 
+                                break; 
+                            }
+                        }
+                        if (alreadyExists) {
+                            LEASI_TRACE(L"Not adding duplicate reachspec");
+                            break;
+                        }
+
                         // Record reachability with the extent used (radius in X, height in Z)
-                        ReachSpec a;
+						ReachSpec a = ReachSpec::GetReachSpecType(allNetworkNodes[i].get(), allNetworkNodes[j].get());
                         a.index = static_cast<int>(j);
                         a.radius = cylinderSize.X;
                         a.height = cylinderSize.Z;
-                        ReachSpec b;
+                        ReachSpec b = ReachSpec::GetReachSpecType(allNetworkNodes[j].get(), allNetworkNodes[i].get());
                         b.index = static_cast<int>(i);
                         b.radius = cylinderSize.X;
                         b.height = cylinderSize.Z;

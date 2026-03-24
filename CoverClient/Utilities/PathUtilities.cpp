@@ -1,7 +1,11 @@
 #pragma once
 
 #include "LESDK/Headers.hpp"
+#include "Common/Objects.hpp"
 #include "CoverClient/Utilities/PathUtilities.hpp"
+#include "CoverClient/CoverGeneration.hpp"
+#include "CoverClient/Classes/CoverLink.hpp"
+#include "CoverClient/Classes/CoverSlotMarker.hpp"
 #include "CoverClient/Classes/NavigationPoint.hpp"
 #include <memory>
 #include <numbers>
@@ -103,5 +107,106 @@ namespace CoverClient {
 			(RelativePos.X * AxisY.X) + (RelativePos.Y * AxisY.Y) + (RelativePos.Z * AxisY.Y),
 			(RelativePos.X * AxisZ.X) + (RelativePos.Y * AxisZ.Y) + (RelativePos.Z * AxisZ.Z)
 		);
+	}
+
+	// This is a reimplementation of WorldInfo->AllNavigationPoints. That uses an unreal iterator,
+	// which sucks to use in our SDK
+	std::vector<ANavigationPoint*> GetAllNavigationPoints(UClass* baseClass) {
+		std::vector<ANavigationPoint*> navPoints;
+		auto engine = ::Common::FindFirstObject<USFXEngine, true>();
+		if (!engine) {
+			return navPoints;
+		}
+		auto wi = static_cast<ABioWorldInfo*>(engine->GetCurrentWorldInfo());
+
+		// Reimplementation
+		if (wi->NavigationPointList != nullptr)
+		{
+			ANavigationPoint* nav = wi->NavigationPointList;
+
+			// Decomp shows it checks for navigation point as baseclass and runs different branch if it isn't
+			if (baseClass && baseClass != ANavigationPoint::StaticClass())
+			{
+				// get the next NavigationPoint in the iteration
+				while (nav != nullptr)
+				{
+					if (nav->IsA(baseClass))
+					{
+						navPoints.push_back(nav);
+					}
+					nav = nav->nextNavigationPoint;
+					if (nav == nullptr)
+					{
+						// No more nav points.
+						break;
+					}
+				}
+			}
+			else
+			{
+				// Decomp shows there is version that doesn't do a IsA() cast check
+				// get the next NavigationPoint in the iteration
+				while (nav != nullptr)
+				{
+					navPoints.push_back(nav);
+					nav = nav->nextNavigationPoint;
+					if (nav == nullptr)
+					{
+						// No more nav points.
+						break;
+					}
+				}
+			}
+		}
+		return navPoints;
+	}
+
+	void LoadExistingLevelNodes() {
+
+		// Clear existing data
+		allNetworkNodes.clear();
+		coverLinks.clear();
+
+		auto navList = GetAllNavigationPoints(nullptr);
+
+		for (auto navPoint : navList) {
+			if (navPoint->IsA(ACoverLink::StaticClass())) {
+				auto sdkLink = static_cast<ACoverLink*>(navPoint);
+
+				auto cl = std::make_unique<CoverLink>(sdkLink->location, sdkLink->Rotation);
+
+				// Create CoverSlotMarkers for each slot in the link
+				for (int slotIdx = 0; slotIdx < (int)sdkLink->Slots.Count(); slotIdx++) {
+					FCoverSlot& sdkSlot = sdkLink->Slots(slotIdx);
+
+					FVector slotPos = sdkLink->GetSlotLocation(slotIdx, FALSE);
+					FRotator slotRot = sdkLink->GetSlotRotation(slotIdx, FALSE);
+
+					// InitializeSlot sets defaults; we overwrite with the actual level data below
+					allNetworkNodes.push_back(std::make_unique<CoverSlotMarker>(slotPos, slotRot));
+					const auto& csm = static_cast<CoverSlotMarker*>(allNetworkNodes.back().get());
+					csm->networkIndex = (int)allNetworkNodes.size() - 1;
+					csm->slot = &sdkSlot;
+
+					cl->AddCoverSlot(csm);
+				}
+
+				// CoverLink is added after its slots, matching the generation pattern
+				allNetworkNodes.push_back(std::move(cl));
+				coverLinks.push_back(static_cast<CoverLink*>(allNetworkNodes.back().get()));
+			}
+			else if (navPoint->IsA(ACoverSlotMarker::StaticClass())) {
+				// Skip standalone CoverSlotMarkers; they are handled via their parent CoverLink
+				continue;
+			}
+			else {
+				// Plain navigation point
+				allNetworkNodes.push_back(std::make_unique<NavigationPoint>(navPoint->location, navPoint->Rotation));
+			}
+		}
+
+		LEASI_INFO("Loaded {} existing network nodes ({} cover links) from level.", allNetworkNodes.size(), coverLinks.size());
+
+		DrawCover();
 	}
 }

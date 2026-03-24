@@ -69,7 +69,10 @@ namespace CoverClient
 
 		// Functions
 		static_construct_object = Init.ResolveTyped<tStaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_RVA);
-	
+
+		// Needed for doing collision checks properly.
+		SingleLineCheck = Init.ResolveTyped<tSingleLineCheck>(LEASI_RVA(0x589ad0)); // LE3 for now.
+
 		// For console commands
 		auto const UGameEngine_Exec_target = Init.ResolveTyped<t_UGameEngine_Exec>(BUILTIN_UGAMEENGINE_EXEC_RVA);
 		CHECK_RESOLVED(UGameEngine_Exec_target);

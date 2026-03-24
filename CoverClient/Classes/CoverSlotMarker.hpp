@@ -19,12 +19,13 @@ namespace CoverClient
         }
         void WriteNodeToHost() const override;
         const char* GetNavName() const override;
-        void InitializeSlot();
+		void InitializeSlot();
 
 		// Slot information is stored here, but is contextually relevant to the CoverLink that owns this slot, so it is written out as part of that.
-        FCoverSlot slot{};
-        
-        // Arrays        
+		FCoverSlot* slot = nullptr;
+		std::unique_ptr<FCoverSlot> ownedSlot; // Used for generated slots that aren't pointed into engine memory
+
+		// Arrays        
         /*
         std::vector<std::string> Actions;
         std::vector<FFireLink>      FireL]inks;

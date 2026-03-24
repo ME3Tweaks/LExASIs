@@ -20,7 +20,7 @@ namespace CoverClient {
 		INT approximateLineOfFire; // LE3 only.
 		FVector collisionCylinderSize; // radius is X and Y, height is Z
 		std::vector<ReachSpec> reachableIndices; // todo: Make this a vector of unique pointers so we don't object slice when we have derived classes with additional data.
-	
+		int networkIndex = -1; // index into allNetworkNodes.
 	
 		NavigationPoint(FVector position, FRotator rotation) {
 			this->position = position;

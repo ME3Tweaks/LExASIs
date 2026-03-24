@@ -69,6 +69,23 @@ namespace CoverClient
 		}
 	}
 
+	ASFXPawn_Player* GetPlayer() {
+		auto engine = ::Common::FindFirstObject<USFXEngine, true>();
+		if (!engine) {
+			LEASI_INFO("No engine found");
+			return nullptr;
+		}
+
+		auto wi = static_cast<ABioWorldInfo*>(engine->GetCurrentWorldInfo());
+		auto playerController = wi->GetALocalPlayerController();
+		if (playerController == nullptr) {
+			LEASI_WARN("No Player.");
+			return nullptr;
+		}
+
+		return (ASFXPawn_Player*)playerController->Pawn;
+	}
+
 	void DrawDebugTraces() {
 		static const FLinearColor TraceLineColorGood{ 0.0f, 1.0f, 0.0f, 1.0f };
 		static const FLinearColor TraceLineColorBad{ 1.0f, 0.0f, 0.0f, 1.0f };
@@ -168,11 +185,313 @@ namespace CoverClient
 		for (const auto cl : coverLinks) {
 			// Storage for all nodes on the pathfinding network. Includes CoverLink and CoverSlotMarker nodes as well as normal nodes
 			actor->DrawDebugPoint(cl->position, 16.0f, coverLinkColor, true);
-            for (const auto& slot : cl->slots) {
+			for (const auto& slot : cl->slots) {
 				actor->DrawDebugStar(slot->position, 12.0f, 255, 0, 0, true);
-				actor->DrawDebugLine(cl->position, slot->position, 128, 128, 64, true);
+				actor->DrawDebugLine(cl->position, slot->position, 128, 128, 64, true); // Required or nothing will actually draw
 			}
 		}
+	}
+
+	void DrawGameFireLinksForCurrentSlot() {
+		auto player = GetPlayer();
+		if (player == nullptr) {
+			return; // Do nothing.
+		}
+
+		if (!player->IsInCover()) {
+			return; // Do nothing.
+		}
+
+		if (!player->CurrentLink) {
+			return; // Do nothing.
+		}
+
+		static const FLinearColor& FireLinkColor{ 255, 0, 0 }; // Game computed
+
+		// This appears to be making a copy
+		const auto& slot = player->CurrentLink->Slots.GetData()[player->CurrentSlotIdx];
+
+		// Draw the firelinks from the slot marker to the target using the offsets
+		FCoverInfo targetCoverInfo;
+		for (UINT i = 0; i < slot.FireLinks.Count(); i++) {
+			const auto& fireLink = slot.FireLinks.GetData()[i];
+			if (player->CurrentLink->GetFireLinkTargetCoverInfo(player->CurrentSlotIdx, i, 0, &targetCoverInfo)) {
+				for (UINT j = 0; j < fireLink.Interactions.Count(); j++) {
+					unsigned char srcType;
+					unsigned char srcAction;
+					unsigned char dstType;
+					unsigned char dstAction;
+					player->CurrentLink->UnPackFireLinkInteractionInfo(fireLink.Interactions.GetData()[j], &srcType, &srcAction, &dstType, &dstAction);
+
+					FVector srcViewPoint = player->CurrentLink->GetSlotViewPoint(player->CurrentSlotIdx, srcType, srcAction);
+					FVector dstViewPoint = targetCoverInfo.Link->GetSlotViewPoint(targetCoverInfo.SlotIdx, dstType, dstAction);
+					DrawDebugLine(srcViewPoint, dstViewPoint, FireLinkColor, 2.0f, false);
+				}
+			}
+		}
+		if (slot.FireLinks.Count() > 0) {
+			// Seems that you have to draw a 0-width line or nothing draws.
+			DrawDebugLine(player->location, player->location, FireLinkColor, 0, false);
+		}
+	}
+
+	void DrawClientFireLinksForCurrentSlot() {
+		auto player = GetPlayer();
+		if (player == nullptr) {
+			return; // Do nothing.
+		}
+
+		if (!player->IsInCover()) {
+			return; // Do nothing.
+		}
+
+		if (!player->CurrentLink) {
+			return; // Do nothing.
+		}
+
+		static const FLinearColor ComputedFireLinkColor{ 255, 0, 0 };
+
+		// Cache: only recompute when the player moves to a different cover slot
+		static ACoverLink* cachedLink = nullptr;
+		static int cachedSlotIdx = -1;
+		static std::vector<ComputedFireLink> cachedLinks;
+
+		if (player->CurrentLink != cachedLink || player->CurrentSlotIdx != cachedSlotIdx) {
+			cachedLink = nullptr;
+			cachedSlotIdx = -1;
+			cachedLinks.clear();
+
+			// Find the CoverSlotMarker in our data that matches the player's current game slot by position
+			const auto& gameSlot = player->CurrentLink->Slots.GetData()[player->CurrentSlotIdx];
+			if (!gameSlot.SlotMarker) {
+				return;
+			}
+			const FVector& slotPos = gameSlot.SlotMarker->LOCATION;
+
+			CoverLink* srcLink = nullptr;
+			CoverSlotMarker* srcCsm = nullptr;
+			for (auto* cl : coverLinks) {
+				for (auto* csm : cl->slots) {
+					FVector diff = {
+						csm->position.X - slotPos.X,
+						csm->position.Y - slotPos.Y,
+						csm->position.Z - slotPos.Z
+					};
+					if (diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z < 16.0f) {
+						srcLink = cl;
+						srcCsm = csm;
+						break;
+					}
+				}
+				if (srcCsm) break;
+			}
+
+			if (!srcCsm) {
+				return; // No matching slot in our cover data
+			}
+
+			cachedLinks = ComputeFireLinksForSlot(srcLink, srcCsm, static_cast<AActor*>(player));
+			cachedLink = player->CurrentLink;
+			cachedSlotIdx = player->CurrentSlotIdx;
+		}
+
+		if (cachedLinks.empty()) {
+			return;
+		}
+
+		for (const auto& fl : cachedLinks) {
+			for (const auto& interaction : fl.interactions) {
+				DrawDebugLine(interaction.srcFirePos, interaction.dstFirePos, ComputedFireLinkColor, 2.0f, false);
+			}
+		}
+		// Seems that you have to draw a 0-width line or nothing draws.
+		DrawDebugLine(player->location, player->location, ComputedFireLinkColor, 0, false);
+	}
+
+	void DrawClientExposedCoverForCurrentSlot() {
+		auto player = GetPlayer();
+		if (player == nullptr) {
+			return; // Do nothing.
+		}
+
+		if (!player->IsInCover()) {
+			return; // Do nothing.
+		}
+
+		if (!player->CurrentLink) {
+			return; // Do nothing.
+		}
+
+		static const FLinearColor DangerNavColor{ 255, 255, 0 };
+
+		// Cache: only redo the slot lookup when the player moves to a different cover slot
+		static ACoverLink* cachedLink = nullptr;
+		static int cachedSlotIdx = -1;
+		static CoverSlotMarker* cachedCsm = nullptr;
+
+		if (player->CurrentLink != cachedLink || player->CurrentSlotIdx != cachedSlotIdx) {
+			cachedLink = nullptr;
+			cachedSlotIdx = -1;
+			cachedCsm = nullptr;
+
+			// Find the CoverSlotMarker in our data that matches the player's current game slot by position
+			const auto& gameSlot = player->CurrentLink->Slots.GetData()[player->CurrentSlotIdx];
+			if (!gameSlot.SlotMarker) {
+				return;
+			}
+			const FVector& slotPos = gameSlot.SlotMarker->LOCATION;
+
+			for (auto* cl : coverLinks) {
+				for (auto* csm : cl->slots) {
+					FVector diff = {
+						csm->position.X - slotPos.X,
+						csm->position.Y - slotPos.Y,
+						csm->position.Z - slotPos.Z
+					};
+					if (diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z < 16.0f) {
+						cachedCsm = csm;
+						break;
+					}
+				}
+				if (cachedCsm) break;
+			}
+
+			if (!cachedCsm) {
+				return; // No matching slot in our cover data
+			}
+
+			cachedLink = player->CurrentLink;
+			cachedSlotIdx = player->CurrentSlotIdx;
+		}
+
+		if (!cachedCsm) {
+			return;
+		}
+
+		auto it = computedExposedCover.find(cachedCsm);
+		if (it == computedExposedCover.end() || it->second.empty()) {
+			return;
+		}
+
+		for (const auto& entry : it->second) {
+			DrawDebugLine(cachedCsm->position, entry.srcSlot->position, DangerNavColor, 2.0f, false);
+		}
+		// Seems that you have to draw a 0-width line or nothing draws.
+		DrawDebugLine(player->location, player->location, DangerNavColor, 0, false);
+	}
+
+	void DrawClientDangerNavsForCurrentSlot() {
+		auto player = GetPlayer();
+		if (player == nullptr) {
+			return; // Do nothing.
+		}
+
+		if (!player->IsInCover()) {
+			return; // Do nothing.
+		}
+
+		if (!player->CurrentLink) {
+			return; // Do nothing.
+		}
+
+		static const FLinearColor ExposedCoverColor{ 0, 64, 255 };
+
+		// Cache: only redo the slot lookup when the player moves to a different cover slot
+		static ACoverLink* cachedLink = nullptr;
+		static int cachedSlotIdx = -1;
+		static CoverSlotMarker* cachedCsm = nullptr;
+
+		if (player->CurrentLink != cachedLink || player->CurrentSlotIdx != cachedSlotIdx) {
+			cachedLink = nullptr;
+			cachedSlotIdx = -1;
+			cachedCsm = nullptr;
+
+			// Find the CoverSlotMarker in our data that matches the player's current game slot by position
+			const auto& gameSlot = player->CurrentLink->Slots.GetData()[player->CurrentSlotIdx];
+			if (!gameSlot.SlotMarker) {
+				return;
+			}
+			const FVector& slotPos = gameSlot.SlotMarker->LOCATION;
+
+			for (auto* cl : coverLinks) {
+				for (auto* csm : cl->slots) {
+					FVector diff = {
+						csm->position.X - slotPos.X,
+						csm->position.Y - slotPos.Y,
+						csm->position.Z - slotPos.Z
+					};
+					if (diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z < 16.0f) {
+						cachedCsm = csm;
+						break;
+					}
+				}
+				if (cachedCsm) break;
+			}
+
+			if (!cachedCsm) {
+				return; // No matching slot in our cover data
+			}
+
+			cachedLink = player->CurrentLink;
+			cachedSlotIdx = player->CurrentSlotIdx;
+		}
+
+		if (!cachedCsm) {
+			return;
+		}
+
+		auto it = computedDangerNavs.find(cachedCsm);
+		if (it == computedDangerNavs.end() || it->second.empty()) {
+			return;
+		}
+
+		for (const auto& entry : it->second) {
+			DrawDebugLine(cachedCsm->position, entry.node->position, ExposedCoverColor, 2.0f, false);
+		}
+		// Seems that you have to draw a 0-width line or nothing draws.
+		DrawDebugLine(player->location, player->location, ExposedCoverColor, 0, false);
+	}
+
+	void DrawInteractionPositions() {
+		auto player = GetPlayer();
+		if (player == nullptr) {
+			return;
+		}
+
+		if (!player->IsInCover()) {
+			return;
+		}
+
+		if (!player->CurrentLink) {
+			return;
+		}
+
+		// Look up matching CoverSlotMarker
+		const auto& gameSlot = player->CurrentLink->Slots.GetData()[player->CurrentSlotIdx];
+		if (!gameSlot.SlotMarker) {
+			return;
+		}
+
+		auto actor = static_cast<AActor*>(AActor::StaticClass()->ClassDefaultObject);
+
+		// CA_LeanLeft=3, CA_LeanRight=4, CA_PopUp=5
+		if (gameSlot.bLeanLeft) {
+			FVector leanLeftPos = ComputeFirePosition(player->CurrentLink, player->CurrentSlotIdx, 3);
+			actor->DrawDebugStar(leanLeftPos, 12, 255, 0, 0, false);
+		}
+
+		if (gameSlot.bLeanRight) {
+			FVector leanRightPos = ComputeFirePosition(player->CurrentLink, player->CurrentSlotIdx, 4);
+			actor->DrawDebugStar(leanRightPos, 12, 0, 255, 0, false);
+		}
+
+		if (gameSlot.bCanPopUp) {
+			FVector popUpPos = ComputeFirePosition(player->CurrentLink, player->CurrentSlotIdx, 5);
+			actor->DrawDebugStar(popUpPos, 12, 0, 0, 255, false);
+		}
+
+		// Seems that you have to draw a 0-width line or nothing draws.
+		DrawDebugLine(player->location, player->location, FLinearColor{ 255, 128, 0, 1 }, 0, false);
 	}
 }
 

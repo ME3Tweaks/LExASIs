@@ -15,6 +15,8 @@ namespace CoverClient {
 		ReachSpec(int idx, float r, float h);
 
 		virtual const char* ClassName() const;
+
+		static ReachSpec GetReachSpecType(const class NavigationPoint* fromNode, const class NavigationPoint* toNode);
 	};
 
 

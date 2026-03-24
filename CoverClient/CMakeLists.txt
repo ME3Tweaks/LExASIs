@@ -8,6 +8,8 @@ asi_target (CoverClient
     "Hooks.hpp"
     "Client.cpp"
     "Client.hpp"
+    "EditorPipe.cpp"
+    "EditorPipe.hpp"
     "PipeHandler.cpp"
     "PipeHandler.hpp"
     "Helpers.cpp"

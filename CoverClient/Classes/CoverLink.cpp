@@ -1,12 +1,13 @@
 #include "Common/Base.hpp"
 #include "Common/Objects.hpp"
 #include "LESDK/Headers.hpp"
+#include "CoverClient/CoverGeneration.hpp"
 #include "CoverClient/Classes/CoverLink.hpp"
 #include "CoverClient/Utilities/PathUtilities.hpp"
 #include "CoverClient/PipeHandler.hpp"
 
 namespace CoverClient {
-	static void WriteSlotToHost(const FCoverSlot& slot);
+	static void WriteSlotToHost(CoverSlotMarker* marker);
 
 	void CoverLink::WriteNodeToHost() const {
 		NavigationPoint::WriteNodeToHost();
@@ -19,8 +20,8 @@ namespace CoverClient {
 		for(const auto& slot : slots) {
 			// Perform pre-serialization to the pipe
 			// Compute the LocationOffset.
-			slot->slot.LocationOffset = CalculateLocationOffset(this->position, this->rotation, slot->position);
-			slot->slot.RotationOffset = FRotator(
+			slot->slot->LocationOffset = CalculateLocationOffset(this->position, this->rotation, slot->position);
+			slot->slot->RotationOffset = FRotator(
 				slot->rotation.Pitch - this->rotation.Pitch,
 				slot->rotation.Yaw - this->rotation.Yaw,
 				slot->rotation.Roll - this->rotation.Roll
@@ -34,7 +35,7 @@ namespace CoverClient {
 			WriteInt(slot->networkIndex);
 
 			// Write the slot information
-			WriteSlotToHost(slot->slot);
+			WriteSlotToHost(slot);
 		}
 	}
 
@@ -46,7 +47,8 @@ namespace CoverClient {
 		slots.push_back(marker);
 	}
 
-	static void WriteSlotToHost(const FCoverSlot& slot) {
+	static void WriteSlotToHost(CoverSlotMarker* marker) {
+		const FCoverSlot& slot = *marker->slot;
 		auto pipeHandle = CreateHostPipe();
 		DWORD numBytesWritten = 0;
 
@@ -70,9 +72,9 @@ namespace CoverClient {
 
 		// Write 'FireLinks'
 		{
-			DWORD count = (DWORD)slot.FireLinks.Count();
-			WriteInt(count);
-			for (const auto& link : slot.FireLinks) {
+			//DWORD count = (DWORD)slot.FireLinks.Count();
+			//WriteInt(count);
+			/*for (const auto& link : slot.FireLinks) {
 				DWORD interactionCount = (DWORD)link.Interactions.Count();
 				WriteInt(interactionCount);
 				for (const auto& interaction : link.Interactions) {
@@ -84,6 +86,37 @@ namespace CoverClient {
 				WriteFile(pipeHandle, &bFallbackLink, 1, &numBytesWritten, NULL);
 				BYTE bDynamicIndexInited = link.bDynamicIndexInited ? 1 : 0;
 				WriteFile(pipeHandle, &bDynamicIndexInited, 1, &numBytesWritten, NULL);
+			}*/
+
+			// Write out our computed firelink data instead.
+			auto it = computedFireLinks.find(marker);
+			if (it != computedFireLinks.end()) {
+				const auto& fireLinks = it->second;
+				DWORD count = (DWORD)fireLinks.size();
+				WriteInt(count);
+				// This is very slow; we should have everything indexed
+				for (const auto& link : fireLinks) {
+					int targetIndex = -1;
+					for (size_t i = 0; i < allNetworkNodes.size(); i++) {
+						if (allNetworkNodes[i].get() == link.targetLink) {
+							targetIndex = (int)i;
+							break;
+						}
+					}
+					WriteInt(targetIndex);
+					WriteInt(link.targetSlotIndex);
+
+					DWORD interactionCount = (DWORD)link.interactions.size();
+					WriteInt(interactionCount);
+					for (const auto& interaction : link.interactions) {
+						WriteFile(pipeHandle, &interaction.srcCoverType, 1, &numBytesWritten, NULL);
+						WriteFile(pipeHandle, &interaction.srcAction, 1, &numBytesWritten, NULL);
+						WriteFile(pipeHandle, &interaction.dstCoverType, 1, &numBytesWritten, NULL);
+						WriteFile(pipeHandle, &interaction.dstAction, 1, &numBytesWritten, NULL);
+					}
+				}
+			} else {
+				WriteInt(0);
 			}
 		}
 
@@ -186,7 +219,7 @@ namespace CoverClient {
 		// Write 'ForceCoverType' as UnrealString - receiver applies this to both ForceCoverType and CoverType
 		// TYPE MISMATCH: C++ stores byte enum value; receiver expects UnrealString enum name
 		static const char* const ECoverTypeNames[] = { "CT_None", "CT_Standing", "CT_MidLevel" };
-		const char* coverTypeName = (slot.ForceCoverType < ARRAYSIZE(ECoverTypeNames)) ? ECoverTypeNames[slot.ForceCoverType] : "CT_None";
+		const char* coverTypeName = (slot.ForceCoverType < ARRAYSIZE(ECoverTypeNames)) ? ECoverTypeNames[slot.CoverType] : "CT_None";
 		WriteStringA(coverTypeName);
 	}
 }

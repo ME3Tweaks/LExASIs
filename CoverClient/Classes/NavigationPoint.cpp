@@ -141,6 +141,6 @@ namespace CoverClient {
 		}
 
 		// If none of the sizes fit, we can either leave it as is or set a special value. Here we leave it as is.
-		LEASI_ERROR("No valid pathfinding node size!");
+		LEASI_ERROR("No valid pathfinding node size fits {}", this->GetNavName());
 	}
 }
