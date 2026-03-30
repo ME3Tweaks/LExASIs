@@ -26,5 +26,17 @@ namespace ConsoleExtension
 
     using t_StaticConstructObject = void*(UClass* Class, UObject* InOuter, SFXName Name, long long SetFlags, UObject* Template, void* outputDevice, UObject* SubobjectRoot, struct FObjectInstancingGraph* InstanceGraph);
     extern t_StaticConstructObject* StaticConstructObject;
+
+    // ! ULocalPlayer::CalcSceneView hook for orthographic projection.
+    // ========================================
+
+    using t_CalcSceneView = void*(ULocalPlayer* thisPlayer, void* ViewFamily, FVector& ViewLocation,
+                                  FRotator& ViewRotation, void* Viewport, void* ViewDrawer);
+    extern t_CalcSceneView* CalcSceneView_orig;
+    void* CalcSceneView_hook(ULocalPlayer* thisPlayer, void* ViewFamily, FVector& ViewLocation,
+                             FRotator& ViewRotation, void* Viewport, void* ViewDrawer);
+
+    extern bool orthoEnabled;
+    extern float orthoWidth;
 #endif
 }
