@@ -50,6 +50,10 @@ namespace ShaderClient {
     /* Invoke to get instruction count of a shader and other info */
     extern tMilanGetShaderInfo* MilanGetShaderInfo;
 
+    extern std::unordered_map<std::wstring, std::vector<D3D_SHADER_MACRO>> ShaderTypeMacroMap;
+    extern std::unordered_map<std::wstring, std::vector<D3D_SHADER_MACRO>> VertexFactoryMacrosMap;
+
+
     void LoadCompiler();
 
     void AddMacro(std::vector<D3D_SHADER_MACRO>& Macros, const char* name, const char* definition);
