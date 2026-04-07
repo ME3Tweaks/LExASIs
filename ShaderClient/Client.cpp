@@ -11,8 +11,9 @@
 
 namespace ShaderClient
 {
+#define ERROR_MESSAGE_BUFFER_SIZE 2048
 	BYTE shaderBuffer[4096 * 1024]; // 4MB buffer for shader bytecode
-	char errorMessage[512]; // 512 bytes for error message.
+	char errorMessage[ERROR_MESSAGE_BUFFER_SIZE]; // 2KiB bytes for error message.
 	NamedParameterAllocation parameterAllocationBuffer[256]; // There better not be more than this...!
 	std::wstring currentAction;
 	bool SendDebugPackages;
@@ -197,6 +198,47 @@ namespace ShaderClient
 		return flags;
 	}
 
+	void SendDebugInfoToMilanHost(HANDLE pipeHandle, FMaterialResource* material, ShaderCompileCombo* scc, const FShaderCompilerEnvironment& env, int outShaderSize, const std::vector<D3D_SHADER_MACRO>& Macros) {
+		// Generate a debug package to ship to ShaderHost
+		DWORD numBytesWritten = 0;
+		BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveDebugInfo);
+		WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
+
+		// Metadata of package for ShaderHost
+		// Material Name
+		auto fullPath = material->Material->GetFullPath();
+		WriteSizedData(pipeHandle, fullPath.Length() * 2, fullPath.Chars());
+
+		// Build package
+		nlohmann::json debugInfo;
+		debugInfo["shaderType"] = ws2s(scc->shaderType->Name);
+		debugInfo["vertexFactoryType"] = scc->vertexFactoryType != nullptr
+			? nlohmann::json(ws2s(scc->vertexFactoryType->Name))
+			: nlohmann::json(nullptr);
+		debugInfo["vertexFactoryShaderFilename"] = scc->vertexFactoryType != nullptr
+			? nlohmann::json(ws2s(scc->vertexFactoryType->ShaderFilename))
+			: nlohmann::json(nullptr);
+		debugInfo["sourceFilename"] = ws2s(scc->shaderType->SourceFilename);
+		debugInfo["functionName"] = ws2s(scc->shaderType->FunctionName);
+		debugInfo["materialHlsl"] = ws2s(env.materialHlslString);
+		debugInfo["compileSucceeded"] = outShaderSize > 0;
+		debugInfo["profile"] = scc->shaderType->Frequency == SF_VERTEX ? "vs" : "ps";
+
+		nlohmann::json macrosArray = nlohmann::json::array();
+		for (const auto& macro : Macros) {
+			if (macro.Name == nullptr) break;
+			nlohmann::json macroObj;
+			macroObj["name"] = macro.Name;
+			macroObj["definition"] = macro.Definition;
+			macrosArray.push_back(macroObj);
+		}
+		debugInfo["macros"] = macrosArray;
+
+		std::string debugJson = debugInfo.dump();
+
+		WriteSizedData(pipeHandle, (DWORD)(debugJson.size()), debugJson.c_str());
+	}
+
 	bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList) {
 		auto pipeHandle = CreateHostPipe();
 
@@ -217,6 +259,10 @@ namespace ShaderClient
 		}
 		else {
 			AddMacro(Macros, "PIXELSHADER", "1");
+		}
+
+		if (scc->vertexFactoryType != nullptr) {
+			AddMacro(Macros, "NUM_SAMPLES", "1");
 		}
 
 		AddCustomMacros(material, *scc, Macros);
@@ -275,7 +321,7 @@ namespace ShaderClient
 			MilanCompileShader(
 				ws2s(scc->shaderType->SourceFilename).c_str(),
 				ws2s(env.materialHlslString.c_str()).c_str(),
-				scc->vertexFactoryType != nullptr ? ws2s(scc->vertexFactoryType->ShaderFilename).c_str() : NULL,
+				scc->vertexFactoryType != nullptr ? ws2s(scc->vertexFactoryType->ShaderFilename).c_str() : NULL, // Filename not name.
 				L"../../Engine/Shaders",
 				&Macros.front(),
 				ws2s(scc->shaderType->FunctionName).c_str(),
@@ -303,10 +349,11 @@ namespace ShaderClient
 			WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
 
 			// The actual error
-			char formattedMessage[768]; // might include path which could be long.
-			sprintf(formattedMessage, "Material '%s' shader '%s' failed to compile: %s",
+			char formattedMessage[768 + ERROR_MESSAGE_BUFFER_SIZE]; // might include path which could be long.
+			sprintf(formattedMessage, "Material '%s' shader '%s' (VF '%s') failed to compile: %s",
 				ws2s(scc->name.Chars()).c_str(),
 				ws2s(scc->shaderType->Name).c_str(),
+				scc->vertexFactoryType != nullptr ? ws2s(scc->vertexFactoryType->Name).c_str() : "None",
 				errorMessage);
 			size_t len = strlen(formattedMessage) + 1;
 
@@ -315,8 +362,12 @@ namespace ShaderClient
 			LEASI_INFO("      {}", formattedMessage);
 		}
 
-		if (outShaderSize <= 0)
+		if (outShaderSize <= 0) {
+			if (SendDebugPackages) {
+				SendDebugInfoToMilanHost(pipeHandle, material, scc, env, outShaderSize, Macros);
+			}
 			return false; // Can't do anything more
+		}
 
 
 		// Get information about shader.
@@ -363,13 +414,6 @@ namespace ShaderClient
 			FString key = parameterAllocationBuffer[i].Name;
 			FParameterAllocation value = parameterAllocationBuffer[i].Allocation;
 			parameterMap.ParameterMap.Set(key, value);
-			/*auto found = parameterMap.ParameterMap.Find(key);
-			if (found == nullptr) {
-				std::wcout << L"IN LOOP TMap.Set(" << i << L") isn't working! Didn't find " << key.Data << L" in the map. Hash: " << GetTypeHash(key) << L"\n";
-			}
-			else {
-				std::wcout << L"IN LOOP OK - Found " << key.Data << L", Hash: " << GetTypeHash(key) << std::endl;
-			}*/
 		}
 
 		if (PRINT_DEBUG_INFO) {
@@ -397,40 +441,7 @@ namespace ShaderClient
 		// Enable to make debugging much easier
 		if (SendDebugPackages)
 		{
-			// Generate a debug package to ship to ShaderHost
-			DWORD numBytesWritten = 0;
-			BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveDebugInfo);
-			WriteFile(pipeHandle, &cmd_sc, 1, &numBytesWritten, NULL);
-
-			// Metadata of package for ShaderHost
-			// Material Name
-			auto fullPath = material->Material->GetFullPath();
-			WriteSizedData(pipeHandle, fullPath.Length() * 2, fullPath.Chars());
-
-			// Build package
-			nlohmann::json debugInfo;
-			debugInfo["shaderType"] = ws2s(scc->shaderType->Name);
-			debugInfo["vertexFactoryType"] = scc->vertexFactoryType != nullptr
-				? nlohmann::json(ws2s(scc->vertexFactoryType->Name))
-				: nlohmann::json(nullptr);
-			debugInfo["sourceFilename"] = ws2s(scc->shaderType->SourceFilename);
-			debugInfo["functionName"] = ws2s(scc->shaderType->FunctionName);
-			debugInfo["materialHlsl"] = ws2s(env.materialHlslString);
-			debugInfo["profile"] = scc->shaderType->Frequency == SF_VERTEX ? "vs" : "ps";
-
-			nlohmann::json macrosArray = nlohmann::json::array();
-			for (const auto& macro : Macros) {
-				if (macro.Name == nullptr) break;
-				nlohmann::json macroObj;
-				macroObj["name"] = macro.Name;
-				macroObj["definition"] = macro.Definition;
-				macrosArray.push_back(macroObj);
-			}
-			debugInfo["macros"] = macrosArray;
-
-			std::string debugJson = debugInfo.dump();
-
-			WriteSizedData(pipeHandle, (DWORD)(debugJson.size()), debugJson.c_str());
+			SendDebugInfoToMilanHost(pipeHandle, material, scc, env, outShaderSize, Macros);
 		}
 
 		// Add shader to the map
