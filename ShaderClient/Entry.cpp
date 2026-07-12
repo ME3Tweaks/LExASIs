@@ -5,6 +5,7 @@
 #include "ShaderClient/Hooks.hpp"
 #include "ShaderClient/Helpers.hpp"
 #include "ShaderClient/SharedVersion.h"
+#include "Client.hpp"
 
 SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
 SPI_PLUGINSIDE_POSTLOAD;
@@ -18,11 +19,6 @@ SPI_IMPLEMENT_ATTACH
 	::ShaderClient::InitializeGlobals(Init);
 	::ShaderClient::InitializeHooks(Init);
 	LEASI_INFO("Welcome to Milan Shader Client");
-
-
-	LEASI_INFO("Size of FArchive: {}", sizeof(FArchive));
-	LEASI_INFO("Size of FMemoryArchive: {}", sizeof(FMemoryArchiveBase));
-
 	return true;
 }
 
@@ -60,32 +56,55 @@ namespace ShaderClient
 	{
 		// All of these addresses are for LE3 currently.
 
+		auto cli = std::wstring(GetCommandLineW());
+		if (cli.find(L"-NoShaderCompile") != std::wstring::npos) {
+			LEASI_INFO(L"Disabling shader compiling");
+			EnableShaderCompile = false;
+		}
+		if (cli.find(L"-ShaderCompile") != std::wstring::npos) {
+			BootShaderCompilerLevel = true;
+		}
+		if (cli.find(L"-SendDebugPackages") != std::wstring::npos) {
+			SendDebugPackages = true;
+		}
+
 		// INIT SHADER MAP - used to trigger hlsl compile when shader fails to load
 		HOOK_PATTERN_POSTHOOK(InitShaderMap, tInitShaderMap, "54 41 55 41 56 41 57 48 81 ec a0 00 00 00 48 c7 44 24 40 fe ff ff ff 49 89 5b 10 49 89 6b 18 49 89 73 20 45 8b e1 45 8b f0 48 8b ea");
 		
-		// FMaterialCompile - used to inspect result of shader map compile and actually generate shader cache
-		HOOK_PATTERN_POSTHOOK(FMaterialCompile, tFMaterialCompile, "41 54 41 55 41 56 41 57 48 8d ac 24 38 f8 ff ff 48 81 ec c8 08 00 00 48 c7 45 f8 fe ff ff ff");
+		if (EnableShaderCompile) {
+			// FMaterialCompile - used to inspect result of shader map compile and actually generate shader cache
+			HOOK_PATTERN_POSTHOOK(FMaterialCompile, tFMaterialCompile, "41 54 41 55 41 56 41 57 48 8d ac 24 38 f8 ff ff 48 81 ec c8 08 00 00 48 c7 45 f8 fe ff ff ff");
 
-		HOOK_PATTERN_POSTHOOK(FMaterialShaderMap_Compile, tCompileShader, "50 48 c7 44 24 30 fe ff ff ff 48 89 5c 24 60 48 89 74 24 68 48 8b fa 48 8b 02 48 8d 54 24 38 48 8b cf ff 90 b8 01 00 00 90");
+			HOOK_PATTERN_POSTHOOK(FMaterialShaderMap_Compile, tCompileShader, "50 48 c7 44 24 30 fe ff ff ff 48 89 5c 24 60 48 89 74 24 68 48 8b fa 48 8b 02 48 8d 54 24 38 48 8b cf ff 90 b8 01 00 00 90");
 
-		//INIT_FIND_PATTERN_POSTHOOK(InitShaderMap, /*"4c 8b dc 57 41*/ "54 41 55 41 56 41 57 48 81 ec a0 00 00 00 48 c7 44 24 40 fe ff ff ff 49 89 5b 10 49 89 6b 18 49 89 73 20 45 8b e1 45 8b f0 48 8b ea")
-		//INIT_HOOK_PATTERN(InitShaderMap);
+			//INIT_FIND_PATTERN_POSTHOOK(InitShaderMap, /*"4c 8b dc 57 41*/ "54 41 55 41 56 41 57 48 81 ec a0 00 00 00 48 c7 44 24 40 fe ff ff ff 49 89 5b 10 49 89 6b 18 49 89 73 20 45 8b e1 45 8b f0 48 8b ea")
+			//INIT_HOOK_PATTERN(InitShaderMap);
 
-		// FMaterialCompile - used to inspect result of shader map compile and actually generate shader cache
-		//INIT_FIND_PATTERN_POSTHOOK(FMaterialCompile, /*"40 55 53 56 57*/ "41 54 41 55 41 56 41 57 48 8d ac 24 38 f8 ff ff 48 81 ec c8 08 00 00 48 c7 45 f8 fe ff ff ff")
-		//INIT_HOOK_PATTERN(FMaterialCompile);
+			// FMaterialCompile - used to inspect result of shader map compile and actually generate shader cache
+			//INIT_FIND_PATTERN_POSTHOOK(FMaterialCompile, /*"40 55 53 56 57*/ "41 54 41 55 41 56 41 57 48 8d ac 24 38 f8 ff ff 48 81 ec c8 08 00 00 48 c7 45 f8 fe ff ff ff")
+			//INIT_HOOK_PATTERN(FMaterialCompile);
 
-		//FMaterialShaderMap_Compile = Init.ResolveTyped<tCompileShader>(LEASI_RVA(0x2a7a30));
-		//INIT_FIND_PATTERN_POSTHOOK(FMaterialShaderMap_Compile, /*"40 57 48 83 ec*/ "50 48 c7 44 24 30 fe ff ff ff 48 89 5c 24 60 48 89 74 24 68 48 8b fa 48 8b 02 48 8d 54 24 38 48 8b cf ff 90 b8 01 00 00 90");
-		//INIT_HOOK_PATTERN(FMaterialShaderMap_Compile);
+			//FMaterialShaderMap_Compile = Init.ResolveTyped<tCompileShader>(LEASI_RVA(0x2a7a30));
+			//INIT_FIND_PATTERN_POSTHOOK(FMaterialShaderMap_Compile, /*"40 57 48 83 ec*/ "50 48 c7 44 24 30 fe ff ff ff 48 89 5c 24 60 48 89 74 24 68 48 8b fa 48 8b 02 48 8d 54 24 38 48 8b cf ff 90 b8 01 00 00 90");
+			//INIT_HOOK_PATTERN(FMaterialShaderMap_Compile);
 
-		// Hooked this way to allow hook sharing
-		HOOK_PATTERN_POSTHOOK(GetTlkString, tGetTlkString,/*"89 54 24 10 4c*/ "8b dc 57 41 54 41 55 41 56 41 57 48 83 ec 60 49 c7 43 a8 fe ff ff ff");
+			// Hooked this way to allow hook sharing
+			HOOK_PATTERN_POSTHOOK(GetTlkString, tGetTlkString,/*"89 54 24 10 4c*/ "8b dc 57 41 54 41 55 41 56 41 57 48 83 ec 60 49 c7 43 a8 fe ff ff ff");
 
-		HOOK_RVA(ShowLoadMessage, tShowLoadMessage, LEASI_RVA(0xc23830))
+			// HOOK_RVA(ShowLoadMessage, tShowLoadMessage, LEASI_RVA(0xc23830))
 
+			HOOK_RVA(PlayLoadingMovie, tPlayLoadingMovie, LEASI_RVA(0xbd9a70));
+
+			if (BootShaderCompilerLevel) {
+				HOOK_RVA(IsWindowFocused, tReturnBool, LEASI_RVA(0xad40e0));
+			}
+
+		}
+	
+		HOOK_RVA(FShaderMap_IsComplete, tShaderMapIsComplete, LEASI_RVA(0x2ae400));
+
+		// Used to redirect us to the shader compiler levels
 		HOOK_RVA(UObject_ProcessInternal, t_UObject_ProcessInternal, BUILTIN_PROCESSINTERNAL_RVA);
-		HOOK_RVA(PlayLoadingMovie, tPlayLoadingMovie, LEASI_RVA(0xbd9a70));
 #if defined(NOTDEFINED)
 
 		// uncomment to make _setSomething_hook break. The game crashes in here after a few iterations

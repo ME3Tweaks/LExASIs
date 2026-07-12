@@ -54,8 +54,6 @@ namespace ShaderClient
 
 	tGetTlkString* GetTlkString_orig = nullptr;
 
-	tShowLoadMessage* ShowLoadMessage_orig = nullptr;
-
 	FArchiveProxy GetStringWithObjectWriterProxy(FArchive& inArchive) {
 		// Copy strings VTable
 		memcpy((void*)&NamesAndObjectsAsStrings_VTable, StringArchiveProxyVTableStart, 0xE0);
@@ -101,24 +99,11 @@ namespace ShaderClient
 			// std::cout << "SerializeObject: " << val << std::endl;
 
 			// Serialize string length.
-			auto memy = (FMemoryArchiveBase*)Ar->InnerArchive;
-			auto memyOff = memy->Offset;
 			DWORD len = (DWORD)val.length();
 			Ar->VTable->Serialize(Ar, &len, 4);
-			auto memyOff2 = memy->Offset;
-			DWORD memyDiff = memyOff2 - memyOff;
-			if (memyDiff != 4) {
-				LEASI_ERROR("Error - diff not 4");
-			}
 
 			// Serialize the string.
-			memyOff = memy->Offset;
 			Ar->VTable->Serialize(Ar, val.data(), len * sizeof(wchar_t)); // len * 2 cause this is an array of wchar_t
-			memyOff2 = memy->Offset;
-			memyDiff = memyOff2 - memyOff;
-			if (memyDiff != len) {
-				LEASI_ERROR("Error ");
-			}
 		}
 
 		return Ar;
@@ -126,8 +111,14 @@ namespace ShaderClient
 
 	UBOOL InitShaderMap_hook(FMaterial* fmaterial, void* StaticParameters, EShaderPlatform Platform, int Quality)
 	{
-		if (MilanCompileShader == nullptr) {
-			return InitShaderMap_orig(fmaterial, StaticParameters, Platform, Quality);
+		if (MilanCompileShader == nullptr || !EnableShaderCompile) {
+			auto res = InitShaderMap_orig(fmaterial, StaticParameters, Platform, Quality);
+			if (!res) {
+				FString name;
+				FMaterial_GetFriendlyName(fmaterial, &name);
+				LEASI_WARN(L"Material requires compile: {}", name.Chars());
+			}
+			return res;
 		}
 		if (GIsSeekFreePCConsole != nullptr) {
 			*GIsSeekFreePCConsole = 0; // Tricks game into thinking it can attempt to compile shader
@@ -150,8 +141,30 @@ namespace ShaderClient
 		return result;
 	}
 
+	tShaderMapIsComplete* FShaderMap_IsComplete_orig = nullptr;
+	UBOOL FShaderMap_IsComplete_hook(void* map, FMaterial* material)
+	{
+		FString name;
+		FMaterial_GetFriendlyName(material, &name);
+
+		auto result = FShaderMap_IsComplete_orig(map, material);
+
+		if (result == 0) {
+			LEASI_WARN(L"\tShader map incomplete for material {}", name);
+		}
+		else {
+			// LEASI_INFO(L"\tShader map complete for material {}", name);
+		}
+
+		return result;
+	}
+
 	UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL debugDump)
 	{
+		// Add these as they don't appear to be reliably set from our decooked stuff.
+		fmaterial->Material->bUsedWithStaticLighting = true;
+		fmaterial->Material->bUsedWithVectorLightMaps = true;
+		fmaterial->Material->bUsedWithSimpleLightMaps = true;
 		auto result = FMaterialCompile_orig(fmaterial, parameterSet, shaderplatform, shaderMap, forceCompile, debugDump);
 		if (result) {
 			// Successfully generated material shader
@@ -192,7 +205,7 @@ namespace ShaderClient
 
 		FString name;
 		FMaterial_GetFriendlyName(material, &name);
-		LEASI_INFO(L"Trying to compile shader {}", materialObjName);
+		LEASI_INFO(L"Trying to compile material shaders for {}", materialObjName);
 		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars())); // Use shortname
 
 		std::vector<ShaderCompileCombo> comboList{};
@@ -201,17 +214,21 @@ namespace ShaderClient
 		// This becomes the Mesh Shader Map
 		std::map<FVertexFactoryType*, std::vector<FShader*>> shadersByVF{};
 
-		LEASI_INFO(L"  Compiling shaders:");
+		if (PRINT_DEBUG_INFO) {
+			LEASI_INFO(L"  Compiling shaders:");
+		}
 		bool compiledSuccessfully = true;
 		for (auto& var : comboList)
 		{
 			std::vector<FShader*>& shaderList = shadersByVF[var.vertexFactoryType];
 			var.name = name;
-			if (var.vertexFactoryType != nullptr) {
-				LEASI_INFO(L"    {}->{}", var.vertexFactoryType->Name, var.shaderType->Name);
-			}
-			else {
-				LEASI_INFO(L"    {}", var.shaderType->Name);
+			if (PRINT_DEBUG_INFO) {
+				if (var.vertexFactoryType != nullptr) {
+					LEASI_INFO(L"    {}->{}", var.vertexFactoryType->Name, var.shaderType->Name);
+				}
+				else {
+					LEASI_INFO(L"    {}", var.shaderType->Name);
+				}
 			}
 
 			FShaderCompilerEnvironment env{};
@@ -222,7 +239,17 @@ namespace ShaderClient
 				var.vertexFactoryType->ModifyCompilationEnvironmentRef(SP_SM5, &env);
 			}
 
-			compiledSuccessfully &= CompileSingleShader(material, &var, env, &shaderList);
+			auto compileOK = CompileSingleShader(material, &var, env, &shaderList);
+			if (!compileOK) {
+				if (var.vertexFactoryType != nullptr) {
+					LEASI_ERROR(L"    Compile failed: {}->{}", var.vertexFactoryType->Name, var.shaderType->Name);
+				}
+				else {
+					LEASI_ERROR(L"    Compile failed: {}", var.shaderType->Name);
+				}
+			}
+
+			compiledSuccessfully &= compileOK;
 		}
 
 		// Build the shader map
@@ -282,14 +309,14 @@ namespace ShaderClient
 	}
 
 	// We cache this on first hook
-	void* showLoadMessage_parm1 = nullptr;
+	/*void* showLoadMessage_parm1 = nullptr;
 	void ShowLoadMessage_hook(void* unknown, int param_2, UINT stringId, int someBool) {
 		if (showLoadMessage_parm1 == nullptr)
 		{
 			showLoadMessage_parm1 = unknown;
 		}
 		ShowLoadMessage_orig(unknown, param_2, stringId, someBool);
-	}
+	}*/
 
 	void RunConsoleCommand(const FString& command) {
 		auto playerController = ::Common::FindFirstObject<APlayerController>();
@@ -298,6 +325,8 @@ namespace ShaderClient
 		}
 	}
 
+	bool BootShaderCompilerLevel = false;
+	bool EnableShaderCompile = true;
 	t_UObject_ProcessInternal* UObject_ProcessInternal_orig = nullptr;
 	void UObject_ProcessInternal_hook(UObject* const Context, FFrame* const Stack, void* const Result)
 	{
@@ -310,13 +339,14 @@ namespace ShaderClient
 				hasRunSplashCheck = true;
 
 				auto cli = std::wstring(GetCommandLineW());
-				if (cli.find(L"-ShaderCompile") != std::wstring::npos) {
+				if (BootShaderCompilerLevel) {
 					LEASI_INFO(L"Loading shader compiler level");
 					RunConsoleCommand(L"at shadercompiler");
 				}
-				else if (cli.find(L"-ShaderViewer") != std::wstring::npos) {
+				else if (cli.find(L"-ShaderPreview") != std::wstring::npos) {
+					EnableShaderCompile = false;
 					LEASI_INFO(L"Loading shader viewer level");
-					RunConsoleCommand(L"at shaderviewer");
+					RunConsoleCommand(L"at shaderpreview");
 				}
 			}
 		}
@@ -329,20 +359,25 @@ namespace ShaderClient
 		if (levelName != nullptr) {
 			if (levelName->Equals(L"shadercompiler", true)) {
 				if (!addedTip) {
+					param_1->AreaLoadTips.Clear();
 					// Doesn't work right now
-					//FLoadingLevelTip* newLoadingTip = (FLoadingLevelTip*)sdkCalloc(sizeof(FLoadingLevelTip));
-					//FLoadingTip* newTip = (FLoadingTip*)sdkCalloc(sizeof(FLoadingTip));
-					//newTip->GenericTip = 1;
-					//newLoadingTip->LevelName = FString(L"shadercompiler");
-					//newLoadingTip->UseRandomTip = false;
-					//newLoadingTip->Tip = *newTip;
+					FLoadingLevelTip newLoadingTip{};
+					newLoadingTip.Tip.GenericTip = 1;
+					newLoadingTip.LevelName = FString(L"shadercompiler");
+					newLoadingTip.UseRandomTip = false;
 					//param_1->AreaLoadTips.Reserve(param_1->AreaLoadTips.Count() + 1); // dies
-					//param_1->AreaLoadTips.Add(*newLoadingTip);
+					param_1->AreaLoadTips.Add(newLoadingTip);
 					addedTip = true;
 				}
 			}
 		}
 
 		PlayLoadingMovie_orig(param_1, levelName, param3);
+	}
+
+	tReturnBool* IsWindowFocused_orig = nullptr;
+	BOOL IsWindowFocused_hook() {
+		// This is only hooked if with -ShaderCompile flag.
+		return TRUE;
 	}
 }

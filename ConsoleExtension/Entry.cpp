@@ -61,6 +61,13 @@ namespace ConsoleExtension
 		// ----------------------------------------
 		StaticConstructObject = Init.ResolveTyped<t_StaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_RVA);
 		CHECK_RESOLVED(StaticConstructObject);
+
+		// ULocalPlayer::CalcSceneView hook for ortho projection
+		// ----------------------------------------
+		auto const CalcSceneView_target = Init.ResolveTyped<t_CalcSceneView>(BUILTIN_CALCSCENEVIEW_RVA);
+		CHECK_RESOLVED(CalcSceneView_target);
+		CalcSceneView_orig = (t_CalcSceneView*)Init.InstallHook("ULocalPlayer::CalcSceneView", CalcSceneView_target, CalcSceneView_hook);
+		CHECK_RESOLVED(CalcSceneView_orig);
 #endif
 
 		LEASI_INFO("hooks initialized");
