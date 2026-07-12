@@ -55,7 +55,9 @@ namespace HotReload
         const BYTE patchData[] = { 0x03 }; // Original in 0x1 : READ SHARE (NOT WRITE). 3 is 0x1 | 0x2 which is READ WRITE SHARE
         if (PatchOffset != nullptr)
         {
-            PatchMemory(PatchOffset, patchData, 1);
+            if (!PatchMemory(PatchOffset, patchData, 1)) {
+				MessageBoxW(NULL, L"Failed to patch memory for hot reload support.", L"Hot Reload", MB_ICONERROR);
+            }
         }
     }
 }
