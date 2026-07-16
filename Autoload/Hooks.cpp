@@ -4,6 +4,8 @@
 #include "Common/DefaultLogger.hpp"
 #include "Autoload/Hooks.hpp"
 #include "Autoload/DLCPackage.hpp"
+#include <format>
+#include <iostream> // Crucial for std::wcout
 
 namespace Autoload
 {
@@ -226,6 +228,7 @@ namespace Autoload
 	// Used in a bunch of places in code but not a lot actually of invocations.
 	tTlkManagerGetSimpleString* TLKLookupSimple_orig = nullptr;
 	FString* TLKLookupSimple_hook(UBioTlkManager* globalTalkTable, FString* outStr, int stringID, BOOL bParse) {
+		outStr->Blank(); // Required as incoming strings seem to just be allocated but not initialized so they are just garbage data.
 		auto result = FindTLKOverride(globalTalkTable, stringID, outStr, bParse);
 		if (result) {
 			return outStr;
@@ -248,9 +251,9 @@ namespace Autoload
 	tTlkManagerTokenizeString* TlkManagerTokenizeString = nullptr;
 	bool FindTLKOverride(UBioTlkManager* globalTalkTable, int stringID, FString* outStr, BOOL bParse){
 		auto i = globalTalkTable->LoadedTLKs.Count();
-		while (i > 0) {
+		while (i > 0) { // 0th item should just be the basegame.
 			auto tlkFile = globalTalkTable->LoadedTLKs.GetData()[i - 1];
-			auto flags = tlkFile->ObjectFlags & 0x0020000000000000;
+			auto flags = tlkFile->ObjectFlags & 0x0020000000000000; // Only operate on 'NotForServer' which is override flag we use
 			if (flags != 0) {
 				if (TlkFileGetString(tlkFile, stringID, outStr)) {
 					// We need to do the bParse one here too

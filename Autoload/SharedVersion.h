@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"AutoloadEnabler"
 
 
-#define ASI_VERSION 12
+#define ASI_VERSION 13
 #define ASI_DESCRIPTION "Autoload Enabler enables DLC mounting in LE1."
 
 
