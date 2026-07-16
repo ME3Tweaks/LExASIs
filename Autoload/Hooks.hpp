@@ -35,8 +35,8 @@ namespace Autoload
 #define OPENFILE_READ_RVA	        ::LESDK::Address::FromOffset(0xF7910)
 #define PROCESSINI_RVA		        ::LESDK::Address::FromOffset(0xC8BE0)
 #define INSTALL_DLC_RVA		        ::LESDK::Address::FromOffset(0xB5D4D0)
-#define TLKLOOKUP_SIMPLE_RVA		::LESDK::Address::FromOffset(0xc53f0)
-#define TLKLOOKUP_ANOTHER_RVA		::LESDK::Address::FromOffset(0xc5490)
+#define BIOTLKFILE_GETSTRING3_RVA		::LESDK::Address::FromOffset(0xc53f0)
+#define BIOTLKFILE_GETSTRING2_RVA		::LESDK::Address::FromOffset(0xc5490)
 #define BIOTLKFILE_GETSTRING_RVA    ::LESDK::Address::FromOffset(0xca3400)
 #define BIOTLKFILE_CUSTOMTOKENS_RVA ::LESDK::Address::FromOffset(0xc7890)
 
@@ -101,7 +101,7 @@ namespace Autoload
 
 	// ! TLKLookupSimple
 	// Allows TLK (Simple) overrides from global TLK files - local ones are super annoying to override
-	using tTlkManagerGetSimpleString = FString * (UBioTlkManager* globalTalkTable, FString* outStr, int stringID, BOOL bParse);
+	using tTlkManagerGetSimpleString = FString* (UBioTlkManager* globalTalkTable, FString* outStr, int stringID, BOOL bParse);
 	extern tTlkManagerGetSimpleString* TLKLookupSimple_orig;
 	FString* TLKLookupSimple_hook(UBioTlkManager* globalTalkTable, FString* outStr, int stringID, BOOL bParse);
 

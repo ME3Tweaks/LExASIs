@@ -104,12 +104,12 @@ namespace Autoload
                     TlkFileGetString = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING_RVA);
                     CHECK_RESOLVED(TlkFileGetString);
 
-                    auto const TLKLookup_target = Init.ResolveTyped<tTlkFileGetString>(TLKLOOKUP_ANOTHER_RVA);
+                    auto const TLKLookup_target = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING2_RVA);
                     CHECK_RESOLVED(TLKLookup_target);
                     TLKLookup_orig = (tTlkManagerGetString*)Init.InstallHook("UBioTlkManager::TLKLookup", TLKLookup_target, TLKLookup_hook);
                     CHECK_RESOLVED(TLKLookup_orig);
 
-                    auto const TLKLookup_target2 = Init.ResolveTyped<tTlkManagerGetSimpleString>(TLKLOOKUP_SIMPLE_RVA);
+                    auto const TLKLookup_target2 = Init.ResolveTyped<tTlkManagerGetSimpleString>(BIOTLKFILE_GETSTRING3_RVA);
                     CHECK_RESOLVED(TLKLookup_target2);
                     TLKLookupSimple_orig = (tTlkManagerGetSimpleString*)Init.InstallHook("UBioTlkManager::TLKLookupSimple", TLKLookup_target2, TLKLookupSimple_hook);
                     CHECK_RESOLVED(TLKLookupSimple_orig);
