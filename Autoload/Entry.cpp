@@ -82,43 +82,26 @@ namespace Autoload
 		ProcessEvent_orig = (tProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, ProcessEvent_hook);
 		CHECK_RESOLVED(ProcessEvent_orig);
 
-        // in v12 we have experimental flag to enable global tlk overrides.
-		// Tooling support for this is not yet present, so we gate it behind a command line argument
-        // for now.
-        // 
-        // For TLK overrides
-        int numArgs;
-        auto args = CommandLineToArgvW(GetCommandLineW(), &numArgs);
-        if (args) {
-            for (int i = 0; i < numArgs; i++) {
-                // wcscmp returns 0 when strings are equal, so check for == 0
-                if (wcscmp(args[i], L"-experimental-tlk-override") == 0) {
+        // TLK OVERRIDE ================
+        // TLK Tokenizing
+        TlkManagerTokenizeString = Init.ResolveTyped<tTlkManagerTokenizeString>(BIOTLKFILE_CUSTOMTOKENS_RVA);
+        CHECK_RESOLVED(TlkManagerTokenizeString);
 
-                    LEASI_INFO("Enabling experimental TLK overrides");
+        // TlkFileGetString
+        TlkFileGetString = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING_RVA);
+        CHECK_RESOLVED(TlkFileGetString);
 
-                    // TLK Tokenizing
-                    TlkManagerTokenizeString = Init.ResolveTyped<tTlkManagerTokenizeString>(BIOTLKFILE_CUSTOMTOKENS_RVA);
-                    CHECK_RESOLVED(TlkManagerTokenizeString);
+        auto const TLKLookup_target = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING2_RVA);
+        CHECK_RESOLVED(TLKLookup_target);
+        TLKLookup_orig = (tTlkManagerGetString*)Init.InstallHook("UBioTlkManager::TLKLookup", TLKLookup_target, TLKLookup_hook);
+        CHECK_RESOLVED(TLKLookup_orig);
 
-                    // TlkFileGetString
-                    TlkFileGetString = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING_RVA);
-                    CHECK_RESOLVED(TlkFileGetString);
+        auto const TLKLookup_target2 = Init.ResolveTyped<tTlkManagerGetSimpleString>(BIOTLKFILE_GETSTRING3_RVA);
+        CHECK_RESOLVED(TLKLookup_target2);
+        TLKLookupSimple_orig = (tTlkManagerGetSimpleString*)Init.InstallHook("UBioTlkManager::TLKLookupSimple", TLKLookup_target2, TLKLookupSimple_hook);
+        CHECK_RESOLVED(TLKLookupSimple_orig);
+        // END TLK OVERRIDE ==============
 
-                    auto const TLKLookup_target = Init.ResolveTyped<tTlkFileGetString>(BIOTLKFILE_GETSTRING2_RVA);
-                    CHECK_RESOLVED(TLKLookup_target);
-                    TLKLookup_orig = (tTlkManagerGetString*)Init.InstallHook("UBioTlkManager::TLKLookup", TLKLookup_target, TLKLookup_hook);
-                    CHECK_RESOLVED(TLKLookup_orig);
-
-                    auto const TLKLookup_target2 = Init.ResolveTyped<tTlkManagerGetSimpleString>(BIOTLKFILE_GETSTRING3_RVA);
-                    CHECK_RESOLVED(TLKLookup_target2);
-                    TLKLookupSimple_orig = (tTlkManagerGetSimpleString*)Init.InstallHook("UBioTlkManager::TLKLookupSimple", TLKLookup_target2, TLKLookupSimple_hook);
-                    CHECK_RESOLVED(TLKLookupSimple_orig);
-
-                    break; // no need to keep scanning
-                }
-            }
-            LocalFree(args);
-        }
         LEASI_INFO("Hooks initialized");
     }
 }
