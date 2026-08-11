@@ -101,6 +101,26 @@ namespace ControllerKeyboard
 	// ! Global variables
 	// ========================================
 
+	// ! ASGetIniBool::GetValueImpl Hook
+	// ========================================
+	// We hook this so we can ask for values in an ini
+	// and if the ASI doesn't hook the method and return a value
+	// it will return the default value and the SWF can change
+	// behavior.
+
+	t_asGetIniBool_GetValueImpl* asGetIniBool_GetValueImpl_orig = nullptr;
+	UINT asGetIniBool_hook(void* param1, void* param2, FString* filename, FString* section, FString* key) {
+		// LEASI_INFO(L"asGetIniBool_hook called with filename: {}, section: {}, key: {}", filename->Chars(), section->Chars(), key->Chars());
+		if (section->Equals(L"Engine.ASIMods") && key->Equals(L"ControllerKeyboard")) // We don't check the filename, we don't really care
+		{
+			uintptr_t* pRetVal = *(uintptr_t**)param2; // dereference Params* to get pRetVal (GFxValue*)
+			*(bool*)(pRetVal + 2) = true;        // the actual bool value
+			*(uint32_t*)(pRetVal + 1) = 2;       // GFxValue type tag = Bool
+			return true; // Todo: Ensure keyboard is actually available.
+		}
+		return asGetIniBool_GetValueImpl_orig(param1, param2, filename, section, key);
+	}
+
 	// ! DisplayKeyboard Hook
 	// ========================================
 	// We completely replace this logic because the original function just throws an error and completes input immediately;
