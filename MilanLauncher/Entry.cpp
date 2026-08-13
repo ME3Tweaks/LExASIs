@@ -149,7 +149,7 @@ namespace MilanLauncher
 
 	// Check if LMP is installed and invokes the actionscript method to set up the UI if it is.
 	void CheckMPInstalled() {
-		auto mpExePath = "../LMP/Binaries/Win64/MassEffect3.exe";
+		auto mpExePath = "../LMP/Binaries/Win64/MassEffectMultiplayer.exe";
 		if (std::filesystem::exists(mpExePath))
 		{
 			InvokeActionScriptMethod("theScreen.MpInstalled");
@@ -161,19 +161,16 @@ namespace MilanLauncher
 	// This doesn't cover return to launcher as it seems to reinitialize the UI.
 	void* CreateString_hook(void* storage, char* data, size_t dataLen) {
 		if (HookNextString && BootingLMP) {
-			// We are booting LMP, so we need to change the string to "LELMilan"
+			// We are booting LMP, so we need to change the executable being built
 			HookNextString = false; // Reset the flag
 
 			// Unset IsResume flag
 			auto launcher = *GetGLauncherApp();
-			//auto b = (bool*)ComputeAddress(launcher, 0x710);
-			// auto val = *b;
 			*((bool*)ComputeAddress(launcher, 0x710)) = 0; // IsResume flag location.
 
-			// Data len is not changing so we don't need to modify that.
-			char* newString = "../LMP/Binaries/Win64/MassEffect3.exe";
+			char* newString = "../LMP/Binaries/Win64/MassEffectMultiplayer.exe";
 			LEASI_INFO("Redirecting game launch to {}", newString);
-			return CreateString_orig(storage, newString, dataLen);
+			return CreateString_orig(storage, newString, 47); // 47 chars long.
 		}
 
 
