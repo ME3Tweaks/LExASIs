@@ -116,7 +116,8 @@ namespace ShaderClient {
 			{ "USE_OCCLUSION_PERCENTAGE", "1" }
 		};
 		VertexFactoryMacrosMap[L"FLocalDecalVertexFactory"] = {
-			{ "DECAL_FACTORY", "1" }
+			{ "DECAL_FACTORY", "1" },
+			{ "WORLD_COORDS", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleBeamTrailDynamicParameterVertexFactory"] = {
 			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
@@ -220,10 +221,10 @@ namespace ShaderClient {
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" }
 		};
 		ShaderTypeMacroMap[L"FVelocityPixelShader"] = {
-			{ "SIMPLE_VERTEX_LIGHTMAP", "1" }
+			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
 		};
 		ShaderTypeMacroMap[L"FVelocityVertexShader"] = {
-			{ "SIMPLE_VERTEX_LIGHTMAP", "1" }
+			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
 		};
 		ShaderTypeMacroMap[L"TAOMeshVertexShader<0>"] = {
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" }
@@ -247,7 +248,8 @@ namespace ShaderClient {
 		};
 		ShaderTypeMacroMap[L"TBasePassPixelShaderFCustomSimpleVertexLightMapPolicySkyLight"] = {
 			{ "ENABLE_SKY_LIGHT", "1" },
-			{ "SIMPLE_VERTEX_LIGHTMAP", "1" }
+			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
+			{ "NUM_LIGHTMAP_COEFFICIENTS", "1" } // Redefined as 1
 		};
 		ShaderTypeMacroMap[L"TBasePassPixelShaderFCustomVectorLightMapTexturePolicyNoSkyLight"] = {
 			{ "USING_VECTORLIGHTMAPS", "1" },
@@ -329,6 +331,10 @@ namespace ShaderClient {
 		};
 		ShaderTypeMacroMap[L"TBasePassVertexShaderFCustomSimpleVertexLightMapPolicyFNoDensityPolicy"] = {
 			{ "FOGVOLUMEDENSITY_NONE", "1" },
+			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
+			{ "NUM_LIGHTMAP_COEFFICIENTS", "1" }
+		};
+		ShaderTypeMacroMap[L"TBasePassVertexShaderFCustomSimpleVertexLightMapPolicyFConstantDensityPolicy"] = {
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
 			{ "NUM_LIGHTMAP_COEFFICIENTS", "1" }
 		};
@@ -563,10 +569,22 @@ namespace ShaderClient {
 			{ "PERSPECTIVE_CORRECT_DEPTH", "1" }
 		};
 
+		// Additions since EngineDebugMaterials
+		ShaderTypeMacroMap[L"TBasePassVertexShaderFCustomSimpleVertexLightMapPolicyFLinearHalfspaceDensityPolicy"] = {
+			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
+			{ "NUM_LIGHTMAP_COEFFICIENTS", "1" },
+		};
+
+		ShaderTypeMacroMap[L"TBasePassVertexShaderFCustomSimpleVertexLightMapPolicyFSphereDensityPolicy"] = {
+			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
+			{ "NUM_LIGHTMAP_COEFFICIENTS", "1" },
+		};
+
 	}
 
 	void AddCustomMacros(FMaterialResource* material, ShaderCompileCombo& scc, std::vector<D3D_SHADER_MACRO>& macros) {
 		auto shaderType = scc.shaderType;
+		auto isVertexShader = scc.shaderType->Frequency == SF_VERTEX;
 		auto shaderTypeName = std::wstring(shaderType->Name);
 
 		auto vertexFactoryType = scc.vertexFactoryType;
@@ -600,24 +618,69 @@ namespace ShaderClient {
 			}
 		}
 
-		// ========== POST-PROCESSING: REMOVE MACROS ==========
-		// Some shader types should NOT have SIMPLE_VERTEX_LIGHTMAP even when their
-		// vertex factory adds it (e.g. translucency/dynamic lighting policies)
-		if (shaderTypeNameS.find(L"FNoLightMapPolicy") != std::wstring::npos ||
-			shaderTypeNameS.find(L"FDirectionalLightLightMapPolicy") != std::wstring::npos ||
-			shaderTypeNameS.find(L"FSHLightLightMapPolicy") != std::wstring::npos) {
-			RemoveMacro(macros, "SIMPLE_VERTEX_LIGHTMAP");
+		// ========== PER-TYPE MACROS ============
+		if (shaderTypeNameS.find(L"FSimpleLightMapTexturePolicy") != std::wstring::npos) {
+			AddMacro(macros, "TEXTURE_LIGHTMAP", "1");
+			AddMacro(macros, "NUM_LIGHTMAP_COEFFICIENTS", "1"); // Redefines it as 1.
 		}
 
+		if (shaderTypeNameS.find(L"FSimpleVertexLightMapPolicy") != std::wstring::npos) {
+			AddMacro(macros, "SIMPLE_VERTEX_LIGHTMAP", "1");
+			AddMacro(macros, "NUM_LIGHTMAP_COEFFICIENTS", "1"); // Redefines it as 1.
+		}
+
+		if (shaderTypeNameS.find(L"FSHLightLightMapPolicy") != std::wstring::npos) {
+			AddMacro(macros, "ENABLE_DIRECTIONAL_LIGHT", "1");
+		}
+
+		if (shaderTypeNameS.find(L"FDirectionalVertexLightMapPolicy") != std::wstring::npos) {
+			AddMacro(macros, "VERTEX_LIGHTMAP", "1");
+		}
+
+		if (shaderTypeNameS.find(L"FDirectionalLightLightMapPolicy") != std::wstring::npos) {
+			AddMacro(macros, "ENABLE_DIRECTIONAL_LIGHT", "1");
+		}
+
+		if (vertexFactoryNameS.starts_with(L"FTerrain")) {
+			AddMacro(macros, "WORLD_COORDS", "1");
+		}
+
+
+		// ========== PER-POLICY MACROS ==========
+		if (shaderTypeNameS.find(L"FDirectionalLightLightMapPolicy") != std::wstring::npos) {
+			AddMacro(macros, "ENABLE_DIRECTIONAL_LIGHT", "1");
+		}
+
+		if (shaderTypeNameS.starts_with(L"TBasePassVertexShaderFCustomVectorLightMapTexturePolicy") ||
+			shaderTypeNameS.starts_with(L"TBasePassVertexShaderFDirectionalLightMapTexturePolicy"))
+		{
+			if (shaderTypeNameS.ends_with(L"FConstantDensityPolicy") ||
+				shaderTypeNameS.ends_with(L"FLinearHalfspaceDensityPolicy") || 
+				shaderTypeNameS.ends_with(L"FSphereDensityPolicy")) {
+				AddMacro(macros, "TEXTURE_LIGHTMAP", "1");
+			}
+		}
+
+
 		// ========== PER-MATERIAL MACROS ==========
+		if (material->Material->bUsedWithDecals) {
+			AddMacro(macros, "MATERIAL_DECAL", "1");
+		}
+
 		if (material->bUsesVertexColor != 0) {
 			AddMacro(macros, "MATERIAL_USES_VERTEX_COLOR", "1");
 		}
 
 		// COORDINATE SPACE
-		if ((material->UsingTransforms & UsedCoord_Local) || (material->UsingTransforms & UsedCoord_View) || (material->UsingTransforms & UsedCoord_World)) {
+		if ((material->UsingTransforms & UsedCoord_Local) != 0 || (material->UsingTransforms & UsedCoord_View) != 0 || (material->UsingTransforms & UsedCoord_World) != 0) {
 			// Unlock world coordinate commands in usfs
 			AddMacro(macros, "WORLD_COORDS", "1");
+		}
+
+
+		// Can't figure out what exactly would set this but it seems to only be on LocalVertexFactory.
+		if (vertexFactoryNameS == L"FLocalVertexFactory" && shaderTypeNameS.starts_with(L"FVelocity")) {
+			AddMacro(macros, "WORLD_COORDS", "1"); 
 		}
 
 		if (material->UsingTransforms & UsedCoord_WorldPos) {
@@ -625,6 +688,15 @@ namespace ShaderClient {
 			AddMacro(macros, "WORLD_POS", "1");
 		}
 
+		if (material->Material->bUsedWithVectorLightMaps && shaderTypeNameS.find(L"FCustomVectorVertexLightMapPolicy") != std::wstring::npos) {
+			AddMacro(macros, "USING_VECTORLIGHTMAPS", "1");
+			AddMacro(macros, "VERTEX_LIGHTMAP", "1");
+		}
+
+		if (material->Material->bUsedWithSimpleLightMaps && shaderTypeNameS.find(L"FCustomSimpleLightMapTexturePolicy") != std::wstring::npos) {
+			AddMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP", "1");
+			AddMacro(macros, "NUM_LIGHTMAP_COEFFICIENTS", "1"); // Redefines it as 1.
+		}
 
 		// MATERIAL BLENDING
 		auto blendMode = material->VTable->GetBlendMode(material);
@@ -632,57 +704,114 @@ namespace ShaderClient {
 		// Blend mode
 		switch (blendMode)
 		{
-		case BLEND_Opaque:
-			AddMacro(macros, "MATERIALBLENDING_SOLID", "1");
-			break;
-		case BLEND_Masked:
-			AddMacro(macros, "MATERIALBLENDING_MASKED", "1");
-			break;
-		case BLEND_SoftMasked:
-			AddMacro(macros, "MATERIALBLENDING_SOFTMASKED", "1");
-			break;
-		case BLEND_AlphaComposite:
-		case BLEND_Translucent:
-			AddMacro(macros, "MATERIALBLENDING_TRANSLUCENT", "1");
-			break;
-		case BLEND_Additive:
-			AddMacro(macros, "MATERIALBLENDING_ADDITIVE", "1");
-			break;
-		case BLEND_Modulate:
-			AddMacro(macros, "MATERIALBLENDING_MODULATE", "1");
-			break;
-		default:
-			LEASI_ERROR("Unknown blend mode: {}", (int)blendMode);
+			case BLEND_Opaque:
+				AddMacro(macros, "MATERIALBLENDING_SOLID", "1");
+				break;
+			case BLEND_Masked:
+				AddMacro(macros, "MATERIALBLENDING_MASKED", "1");
+				break;
+			case BLEND_SoftMasked:
+				AddMacro(macros, "MATERIALBLENDING_SOFTMASKED", "1");
+				break;
+			case BLEND_AlphaComposite:
+			case BLEND_Translucent:
+				AddMacro(macros, "MATERIALBLENDING_TRANSLUCENT", "1");
+				break;
+			case BLEND_Additive:
+				AddMacro(macros, "MATERIALBLENDING_ADDITIVE", "1");
+				break;
+			case BLEND_Modulate:
+				AddMacro(macros, "MATERIALBLENDING_MODULATE", "1");
+				break;
+			default:
+				LEASI_ERROR("Unknown blend mode: {}", (int)blendMode);
+				break;
 		}
 
 		// MATERIAL LIGHTING
 		auto lightingMode = material->VTable->GetLightingModel(material);
 		switch (lightingMode)
 		{
-		case MLM_SHPRT:
-		case MLM_Phong:
-			AddMacro(macros, "MATERIAL_LIGHTINGMODEL_PHONG", "1");
-			break;
-		case MLM_NonDirectional:
-			AddMacro(macros, "MATERIAL_LIGHTINGMODEL_NONDIRECTIONAL", "1");
-			break;
-		case MLM_Unlit:
-			AddMacro(macros, "MATERIAL_LIGHTINGMODEL_UNLIT", "1");
-			break;
-		case MLM_Custom:
-			AddMacro(macros, "MATERIAL_LIGHTINGMODEL_CUSTOM", "1");
-			break;
-		case MLM_Anisotropic:
-			AddMacro(macros, "MATERIAL_LIGHTINGMODEL_ANISOTROPIC", "1");
-			break;
-		default:
-			LEASI_ERROR("Unknown lighting mode: {}", (int)lightingMode);
+			case MLM_SHPRT:
+			case MLM_Phong:
+				AddMacro(macros, "MATERIAL_LIGHTINGMODEL_PHONG", "1");
+				break;
+			case MLM_NonDirectional:
+				AddMacro(macros, "MATERIAL_LIGHTINGMODEL_NONDIRECTIONAL", "1");
+				break;
+			case MLM_Unlit:
+				AddMacro(macros, "MATERIAL_LIGHTINGMODEL_UNLIT", "1");
+				break;
+			case MLM_Custom:
+				AddMacro(macros, "MATERIAL_LIGHTINGMODEL_CUSTOM", "1");
+				break;
+			case MLM_Anisotropic:
+				AddMacro(macros, "MATERIAL_LIGHTINGMODEL_ANISOTROPIC", "1");
+				break;
+			default:
+				LEASI_ERROR("Unknown lighting mode: {}", (int)lightingMode);
+				break;
 		}
 
 		// MATERIAL TWO SIDED
 		if (material->VTable->IsTwoSided(material)) {
 			AddMacro(macros, "MATERIAL_TWOSIDED", "1");
 		}
+
+
+		// ========== POST-PROCESSING: REMOVE MACROS ==========
+		// Some shader types should NOT have SIMPLE_VERTEX_LIGHTMAP even when their
+		// vertex factory adds it (e.g. translucency/dynamic lighting policies)
+		if (shaderTypeNameS.find(L"FNoLightMapPolicy") != std::wstring::npos ||
+			shaderTypeNameS.find(L"FDirectionalLightLightMapPolicy") != std::wstring::npos ||
+			shaderTypeNameS.find(L"FSHLightLightMapPolicy") != std::wstring::npos) {
+			RemoveMacro(macros, "SIMPLE_VERTEX_LIGHTMAP");
+			RemoveMacro(macros, "TEXTURE_LIGHTMAP");
+		}
+
+		//if (shaderTypeNameS.starts_with(L"TBassPassVertexShaderFCustomSimpleLightMapTexturePolicy") ||
+		//	shaderTypeNameS.starts_with(L"TBassPassVertexShaderFSimpleLightMapTexturePolicy")) {
+		//	// These are auto generated for lightmapped shader types but these two are light policy suffixes
+		//	// that never set this. It's in the macro hell that is shader types
+		//	// This is a pretty common one but I don't understand how to apply it
+		//	// if you turn this on it breaks a ton of stuff
+		//	if (shaderTypeNameS.ends_with(L"SkyLight") && !isVertexShader) {
+		//		RemoveMacro(macros, "TEXTURE_LIGHTMAP");
+		//	}
+		//}
+
+		bool isSkyLight = shaderTypeNameS.ends_with(L"SkyLight") && !shaderTypeNameS.ends_with(L"NoSkyLight");
+
+		// SimpleLightMap uses SIMPLE_TEXTURE_LIGHTMAP
+		if (shaderTypeNameS.starts_with(L"TBasePassPixelShaderFSimpleLightMapTexturePolicy")) {
+			if (isSkyLight && !isVertexShader) {
+				AddMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP", "1");
+				RemoveMacro(macros, "TEXTURE_LIGHTMAP");
+			}
+		}
+
+		// CustomSimpleLightMap uses TEXTURE_LIGHTMAP
+		if (shaderTypeNameS.starts_with(L"TBasePassPixelShaderFCustomSimpleLightMapTexturePolicy")) {
+			if (isSkyLight && !isVertexShader) {
+				RemoveMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP");
+				AddMacro(macros, "TEXTURE_LIGHTMAP", "1");
+			}
+		}
+
+		if (shaderTypeNameS.find(L"FCustomSimpleVertexLightMapPolicy") != std::wstring::npos ||
+			shaderTypeNameS.find(L"FCustomVectorVertexLightMapPolicy") != std::wstring::npos ||
+			shaderTypeNameS.find(L"FDirectionalVertexLightMapPolicy") != std::wstring::npos) {
+
+			// These are auto generated for lightmapped shader types but these two are light policy suffixes
+			// that never set this. It's in the macro hell that is shader types
+			// This is a pretty common one but I don't understand how to apply it
+			// if you turn this on it breaks a ton of stuff
+			if (isSkyLight && !isVertexShader) {
+				RemoveMacro(macros, "TEXTURE_LIGHTMAP");
+				RemoveMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP");
+			}
+		}
+
 #endif
 	}
 }
