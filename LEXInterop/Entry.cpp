@@ -13,7 +13,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 
 SPI_IMPLEMENT_ATTACH
 {
-#ifdef DEBUG
+#ifdef _DEBUG
     ::LESDK::InitializeConsole();
 #endif
     ::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
@@ -34,7 +34,7 @@ SPI_IMPLEMENT_DETACH
     LEASI_UNUSED(InterfacePtr);
 
     ::LEXInterop::StopPipeThread();
-#ifdef DEBUG
+#ifdef _DEBUG
     ::LESDK::TerminateConsole();
 #endif
 

@@ -13,7 +13,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 SPI_IMPLEMENT_ATTACH
 {
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
-#ifdef DEBUG	
+#ifdef _DEBUG	
 ::Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A);
 #endif	
 	::ControllerKeyboard::InitializeGlobals(Init);
