@@ -29,7 +29,8 @@
                 "LEASI_BUILD_LE1": true,
                 "LEASI_BUILD_LE2": true,
                 "LEASI_BUILD_LE3": true,
-                "LEASI_BUILD_LEL": true
+                "LEASI_BUILD_LEL": true,
+                "LEASI_BUILD_LMP": true
             },
             "condition": {
                 "type": "equals",

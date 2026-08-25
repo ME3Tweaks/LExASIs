@@ -1,6 +1,6 @@
 asi_target (LEXInterop
   SHARED
-  GAMES "LE1" "LE2" "LE3"
+  GAMES "LE1" "LE2" "LE3" "LMP"
   SOURCES
     "Entry.cpp"
     "Entry.hpp"

@@ -21,19 +21,21 @@
 
 
 // === Identification from automated ME3Tweaks tooling ====
-#if defined(SDK_TARGET_LE1)
+// LEASI_GAME_LMP is checked first: LMP builds against the LE3 SDK (SDK_TARGET_LE3
+// is also defined in that case), but needs its own identity here.
+#if defined(LEASI_GAME_LMP)
+#define GAME_PREFIX_RC    "LMP"
+#define ASI_GROUP_ID_RC 1206
+#define ASI_GAME_ID_RC 8
+#elif defined(SDK_TARGET_LE1)
 #define GAME_PREFIX_RC    "LE1"
 #define ASI_GROUP_ID_RC 42
 #define ASI_GAME_ID_RC 4
-#endif
-
-#if defined(SDK_TARGET_LE2)
+#elif defined(SDK_TARGET_LE2)
 #define GAME_PREFIX_RC    "LE2"
 #define ASI_GROUP_ID_RC 79
 #define ASI_GAME_ID_RC 5
-#endif
-
-#if defined(SDK_TARGET_LE3)
+#elif defined(SDK_TARGET_LE3)
 #define GAME_PREFIX_RC    "LE3"
 #define ASI_GROUP_ID_RC 80
 #define ASI_GAME_ID_RC 6

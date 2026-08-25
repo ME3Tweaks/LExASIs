@@ -67,7 +67,9 @@ namespace LEXInterop
     // Get the game-specific pipe name
     inline const wchar_t* GetPipeName()
     {
-#if defined(SDK_TARGET_LE1)
+#if defined(LEASI_GAME_LMP)
+        return L"\\\\.\\pipe\\LEX_LMP_COMM_PIPE";
+#elif defined(SDK_TARGET_LE1)
         return L"\\\\.\\pipe\\LEX_LE1_COMM_PIPE";
 #elif defined(SDK_TARGET_LE2)
         return L"\\\\.\\pipe\\LEX_LE2_COMM_PIPE";

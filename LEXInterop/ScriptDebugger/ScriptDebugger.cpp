@@ -42,7 +42,9 @@ namespace LEXInterop::ScriptDebugger
 
     const wchar_t* GetDebuggerPipeName()
     {
-#if defined(SDK_TARGET_LE1)
+#if defined(LEASI_GAME_LMP)
+        return L"\\\\.\\pipe\\LEX_LMP_SCRIPTDEBUG_PIPE";
+#elif defined(SDK_TARGET_LE1)
         return L"\\\\.\\pipe\\LEX_LE1_SCRIPTDEBUG_PIPE";
 #elif defined(SDK_TARGET_LE2)
         return L"\\\\.\\pipe\\LEX_LE2_SCRIPTDEBUG_PIPE";
