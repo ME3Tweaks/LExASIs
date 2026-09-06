@@ -1,15 +1,19 @@
-#include "CoverClient/Hooks.hpp"
+﻿#include "CoverClient/Hooks.hpp"
 #include "CoverClient/Helpers.hpp"
 #include "CoverClient/Client.hpp"
 #include "CoverClient/EditorPipe.hpp"
 #include "CoverClient/PathfindingGeneration.hpp"
 #include "CoverClient/CoverGeneration.hpp"
+#include "CoverClient/CoverExport.hpp"
+#include "CoverClient/ScoutHarness.hpp"
 #include "CoverClient/Classes/CoverLink.hpp"
 #include "CoverClient/Utilities/DebugTools.hpp"
 #include "CoverClient/Utilities/PathUtilities.hpp"
 #include "Common/Objects.hpp"
 #include "LESDK/Headers.hpp"
 #include <map>
+#include <string>
+#include <cwchar>
 
 namespace CoverClient
 {
@@ -47,7 +51,7 @@ namespace CoverClient
 		}
 	}
 
-	bool BootShaderCompilerLevel = false;
+	bool BootCoverTestLevel = true;
 	t_UObject_ProcessInternal* UObject_ProcessInternal_orig = nullptr;
 	void UObject_ProcessInternal_hook(UObject* const Context, FFrame* const Stack, void* const Result)
 	{
@@ -60,9 +64,11 @@ namespace CoverClient
 				hasRunSplashCheck = true;
 
 				auto cli = std::wstring(GetCommandLineW());
-				if (BootShaderCompilerLevel) {
-					LEASI_INFO(L"Loading shader compiler level");
-					RunConsoleCommand(L"at shadercompiler");
+				if (cli.find(L" -bootcovertest") != std::wstring::npos) {
+					if (BootCoverTestLevel) {
+						LEASI_INFO(L"Loading CoverTest level");
+						RunConsoleCommand(L"at BioP_CoverTest");
+					}
 				}
 			}
 		}
@@ -123,6 +129,129 @@ namespace CoverClient
 			}
 
 
+			// Scout harness spike -- see Notes/02-le3-native-cover-functions.md
+			else if (CommandCopy.Contains(L"cc.testscout")) {
+				CmdTestScout();
+			}
+			else if (CommandCopy.Contains(L"cc.testautoadjust")) {
+				CmdTestAutoAdjust();
+			}
+			else if (CommandCopy.Contains(L"cc.testbuildslotinfo")) {
+				CmdTestBuildSlotInfo();
+			}
+			else if (CommandCopy.Contains(L"cc.spawnlink")) {
+				CmdSpawnLink();
+			}
+			else if (CommandCopy.Contains(L"cc.sweep")) {
+				// cc.sweep [radius] [maxSamples] [maxLinks]. Missing or 0 means "work it out",
+				// which is also what an unparseable argument gives -- wcstof leaves the cursor
+				// where it found it and returns zero.
+				float Radius = 0.0f;
+				int MaxSamples = 0;
+				int MaxLinks = 0;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring Arguments{ CommandView.substr(Space + 1) };
+					wchar_t* Cursor = Arguments.data();
+					Radius = std::wcstof(Cursor, &Cursor);
+					MaxSamples = static_cast<int>(std::wcstof(Cursor, &Cursor));
+					MaxLinks = static_cast<int>(std::wcstof(Cursor, &Cursor));
+				}
+				CmdSweep(Radius, MaxSamples, MaxLinks);
+			}
+			else if (CommandCopy.Contains(L"cc.importlinks")) {
+				CmdImportLinks();
+			}
+			else if (CommandCopy.Contains(L"cc.despawnenemyspawnpoints")) {
+				CmdDespawnEnemySpawnPoints();
+			}
+			else if (CommandCopy.Contains(L"cc.enemyspawnpoint")) {
+				// cc.enemyspawnpoint [count] -- how many of the nearest cover slots to put a
+				// spawn point on. Missing or unparseable means one.
+				int Count = 1;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Argument{ CommandView.substr(Space + 1) };
+					int const Parsed =
+						static_cast<int>(std::wcstof(Argument.c_str(), nullptr));
+					if (Parsed > 0) { Count = Parsed; }
+				}
+				CmdSpawnEnemySpawnPoints(Count);
+			}
+			else if (CommandCopy.Contains(L"cc.despawnlinks")) {
+				CmdDespawnLinks();
+			}
+			else if (CommandCopy.Contains(L"cc.buildlinks")) {
+				CmdBuildLinks();
+			}
+			else if (CommandCopy.Contains(L"cc.buildslips")) {
+				CmdBuildSlips();
+			}
+			else if (CommandCopy.Contains(L"cc.clearslips")) {
+				CmdClearSlips();
+			}
+			else if (CommandCopy.Contains(L"cc.slips")) {
+				// cc.slips [radius]  -- every edge slot near you and what it connects to.
+				float Radius = 512.0f;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Argument{ CommandView.substr(Space + 1) };
+					wchar_t* Cursor = nullptr;
+					double const Parsed = std::wcstod(Argument.c_str(), &Cursor);
+					if (Cursor != Argument.c_str()) { Radius = static_cast<float>(Parsed); }
+				}
+				CmdSlips(Radius);
+			}
+			else if (CommandCopy.Contains(L"cc.explainlink")) {
+				// cc.explainlink         pick by aim
+				// cc.explainlink C12     CoverLink_12, the name the game's own
+				//                        'profile cover self' prints
+				// cc.explainlink L13     the spawn-list index
+				// cc.explainlink 13      same as L13
+				//
+				// Both forms are on the in-world label ("C12 L13 s4 ..."), so whichever
+				// number is to hand can be typed without converting it.
+				int Index = -1;
+				int ObjectNumber = -1;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring Argument{ CommandView.substr(Space + 1) };
+					while (!Argument.empty() && Argument.front() == L' ')
+					{
+						Argument.erase(Argument.begin());
+					}
+
+					bool bObjectNumber = false;
+					if (!Argument.empty() && (Argument.front() == L'C' || Argument.front() == L'c'))
+					{
+						bObjectNumber = true;
+						Argument.erase(Argument.begin());
+					}
+					else if (!Argument.empty()
+						&& (Argument.front() == L'L' || Argument.front() == L'l'))
+					{
+						Argument.erase(Argument.begin());
+					}
+
+					wchar_t* Cursor = nullptr;
+					long const Parsed = std::wcstol(Argument.c_str(), &Cursor, 10);
+					if (Cursor != Argument.c_str())
+					{
+						if (bObjectNumber) { ObjectNumber = static_cast<int>(Parsed); }
+						else { Index = static_cast<int>(Parsed); }
+					}
+				}
+				CmdExplainLink(Index, ObjectNumber);
+			}
+			else if (CommandCopy.Contains(L"cc.drawslotorigins")) {
+				DrawSlotOriginLabels = !DrawSlotOriginLabels;
+				LEASI_INFO(L"Slot origin labels {}.",
+					DrawSlotOriginLabels ? L"ON (within the detail radius)" : L"OFF");
+			}
+			else if (CommandCopy.Contains(L"cc.covercheck")) {
+				CmdCoverCheck();
+			}
+
 			// Debug drawing tools
 			else if (CommandCopy.Contains(L"cc.drawgamefirelinks")) {
 				DrawGameFireLinksForSlot = !DrawGameFireLinksForSlot;
@@ -138,6 +267,31 @@ namespace CoverClient
 			}
 			else if (CommandCopy.Contains(L"cc.drawinteractionpositions")) {
 				DrawCoverInteractionLocations = !DrawCoverInteractionLocations;
+			}
+			else if (CommandCopy.Contains(L"cc.drawlinks")) {
+				// cc.drawlinks         toggle
+				// cc.drawlinks <n>     draw within n units (0 turns it off)
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Argument{ CommandView.substr(Space + 1) };
+					float const Radius = std::wcstof(Argument.c_str(), nullptr);
+					DrawSpawnedLinks = Radius > 0.0f;
+					if (DrawSpawnedLinks) { SpawnedLinkDrawDistance = Radius; }
+				}
+				else
+				{
+					DrawSpawnedLinks = !DrawSpawnedLinks;
+				}
+				if (DrawSpawnedLinks)
+				{
+					LEASI_INFO(L"Spawned cover link overlay ON, drawing within {:.0f}u "
+						L"(full detail within {:.0f}u).",
+						SpawnedLinkDrawDistance, SpawnedLinkDrawDistance * 0.5f);
+				}
+				else
+				{
+					LEASI_INFO(L"Spawned cover link overlay OFF");
+				}
 			}
 
 			// Single command versions
@@ -164,10 +318,41 @@ namespace CoverClient
 	t_UObject_ProcessEvent* UObject_ProcessEvent_orig = nullptr;
 	void UObject_ProcessEvent_hook(UObject* Context, UFunction* Function, void* Parms, void* Result)
 	{
-		auto funcFullName = Function->GetFullName();
-
-		if (funcFullName.Equals(L"Function SFXGame.BioHUD.PostRender"))
+		// Any HUD's PostRender, not one named class.
+		//
+		// LE3 draws through SFXGame.BioHUD and LMP through SFXHUDMP; they are mutually
+		// exclusive -- only one exists in a given game's packages -- so matching a literal
+		// class path binds this ASI to one of the two. AHUD is what they share, and Canvas
+		// lives there, which is all the overlay needs.
+		//
+		// Name first, cast second: ProcessEvent is on the hot path for every script call in
+		// the game, so the cheap test goes first and the class walk only runs on a match.
+		if (Function->GetName().Equals(L"PostRender"))
 		{
+			auto* const hud = Context->Cast<AHUD>();
+			if (hud == nullptr)
+			{
+				UObject_ProcessEvent_orig(Context, Function, Parms, Result);
+				return;
+			}
+
+			// Only the LOCAL PLAYER'S HUD, or the overlay draws once per HUD actor.
+			//
+			// Broadening the match from a named class to any AHUD also picked up every other
+			// HUD in the world -- sub-HUDs hang off HudOwner, and each gets its own PostRender
+			// with its own Canvas and its own HudCanvasScale. Boxes drawn twice land on top of
+			// each other and look normal; TEXT drawn twice at slightly different scales comes
+			// out doubled and unreadable, which is exactly what it did. It is also double the
+			// work for nothing.
+			if (hud->PlayerOwner == nullptr || hud->HudOwner != nullptr)
+			{
+				UObject_ProcessEvent_orig(Context, Function, Parms, Result);
+				return;
+			}
+
+			// The Canvas is only valid for the duration of this call, so it is handed over
+			// per frame and taken back below rather than cached.
+			SetHudCanvas(hud->Canvas);
 			if (auto* engine = ::Common::FindFirstObject<USFXEngine, true>())
 			{
 				auto* wi = static_cast<ABioWorldInfo*>(engine->GetCurrentWorldInfo());
@@ -203,6 +388,11 @@ namespace CoverClient
 			if (DrawCoverInteractionLocations) {
 				DrawInteractionPositions();
 			}
+			if (DrawSpawnedLinks) {
+				DrawSpawnedCoverLinks();
+			}
+
+			SetHudCanvas(nullptr);
 		}
 
 		UObject_ProcessEvent_orig(Context, Function, Parms, Result);

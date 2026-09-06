@@ -1,6 +1,7 @@
 asi_target (CoverClient
   SHARED
-  GAMES "LE3"
+  GAMES "LE3" "LMP"
+  EXTRA_DEBUGGER_ARGS "-bootcovertest"
   SOURCES
     "Entry.cpp"
     "Entry.hpp"
@@ -18,6 +19,12 @@ asi_target (CoverClient
     "PathfindingGeneration.cpp"
     "CoverGeneration.hpp"
     "CoverGeneration.cpp"
+    "CoverExport.hpp"
+    "CoverExport.cpp"
+    "ScoutHarness.hpp"
+    "ScoutHarness.cpp"
+    "CoverEdges.hpp"
+    "CoverEdges.cpp"
     "Classes/ReachSpecs.hpp"
     "Classes/ReachSpecs.cpp"
     "Classes/NavigationPoint.cpp"

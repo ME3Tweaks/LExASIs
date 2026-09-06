@@ -218,8 +218,12 @@ namespace CoverClient {
 
 		// Write 'ForceCoverType' as UnrealString - receiver applies this to both ForceCoverType and CoverType
 		// TYPE MISMATCH: C++ stores byte enum value; receiver expects UnrealString enum name
+		// The guard used to test ForceCoverType while the index used CoverType, so an
+		// out-of-range CoverType read past the end of the array whenever ForceCoverType
+		// happened to be in range. CoverType is the value being written -- the receiver
+		// applies it to both fields -- so it is the one to bounds-check.
 		static const char* const ECoverTypeNames[] = { "CT_None", "CT_Standing", "CT_MidLevel" };
-		const char* coverTypeName = (slot.ForceCoverType < ARRAYSIZE(ECoverTypeNames)) ? ECoverTypeNames[slot.CoverType] : "CT_None";
+		const char* coverTypeName = (slot.CoverType < ARRAYSIZE(ECoverTypeNames)) ? ECoverTypeNames[slot.CoverType] : "CT_None";
 		WriteStringA(coverTypeName);
 	}
 }

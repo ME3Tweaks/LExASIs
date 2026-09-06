@@ -102,9 +102,13 @@ namespace CoverClient {
 
 		// InverseTransform (Rotate the relative vector into local space)
 		// This is equivalent to: LocalVector = WorldVector * Transpose(RotationMatrix)
+		// Each row is RelativePos dotted with one axis. The Z terms were AxisX.X and AxisY.Y
+		// rather than AxisX.Z / AxisY.Z, which silently corrupted every serialised
+		// LocationOffset the moment a slot sat at a different height from its link -- which
+		// is always, because AutoAdjustSlot ground-snaps slots and the link does not move.
 		return FVector(
-			(RelativePos.X * AxisX.X) + (RelativePos.Y * AxisX.Y) + (RelativePos.Z * AxisX.X),
-			(RelativePos.X * AxisY.X) + (RelativePos.Y * AxisY.Y) + (RelativePos.Z * AxisY.Y),
+			(RelativePos.X * AxisX.X) + (RelativePos.Y * AxisX.Y) + (RelativePos.Z * AxisX.Z),
+			(RelativePos.X * AxisY.X) + (RelativePos.Y * AxisY.Y) + (RelativePos.Z * AxisY.Z),
 			(RelativePos.X * AxisZ.X) + (RelativePos.Y * AxisZ.Y) + (RelativePos.Z * AxisZ.Z)
 		);
 	}

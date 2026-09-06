@@ -1,5 +1,6 @@
 #pragma once
 #include <LESDK/Headers.hpp>
+#include "Common/Base.hpp"
 #include <string>
 
 namespace CoverClient

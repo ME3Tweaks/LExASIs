@@ -4,6 +4,7 @@
 #include "CoverClient/Entry.hpp"
 #include "CoverClient/Hooks.hpp"
 #include "CoverClient/Helpers.hpp"
+#include "CoverClient/ScoutHarness.hpp"
 #include "CoverClient/SharedVersion.h"
 
 SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
@@ -33,6 +34,20 @@ namespace CoverClient
 	void InitializeGlobals(::LESDK::Initializer& Init)
 	{
 		Common::InitializeRequiredGlobals(Init);
+
+		// Some extra maybe required things
+		GEngine = Init.ResolveTyped<UEngine*>(BUILTIN_GENGINE_RVA);
+		CHECK_RESOLVED(GEngine);
+		GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RVA);
+		CHECK_RESOLVED(GNatives);
+		GSys = Init.ResolveTyped<USystem*>(BUILTIN_GSYS_RVA);
+		CHECK_RESOLVED(GSys);
+		GWorld = Init.ResolveTyped<UWorld*>(BUILTIN_GWORLD_RVA);
+		CHECK_RESOLVED(GWorld);
+		GError = Init.ResolveTyped<void*>(BUILTIN_GERROR_RVA);
+		CHECK_RESOLVED(GError);
+		LEASI_INFO("Globals initialized");
+
 	}
 
 #define HOOK_PATTERN_POSTHOOK(NAME, SIG, POSTHOOK) \
@@ -85,6 +100,10 @@ namespace CoverClient
 		CHECK_RESOLVED(GWorld);
 
 		// For debug drawing
+		// Lets us drive the game's own cover analysis (AutoAdjustSlot / BuildSlotInfo),
+		// which needs a Scout that LE3 no longer creates for itself.
+		InitializeScoutHooks(Init);
+
 		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_RVA);
 		CHECK_RESOLVED(UObject_ProcessEvent_target);
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
