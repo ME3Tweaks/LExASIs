@@ -1,5 +1,6 @@
 #include "Entry.hpp"
 #include "Hooks.hpp"
+#include "TransparentRender.hpp"
 
 #include <SPI.h>
 #include "Common/Base.hpp"
@@ -13,6 +14,9 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 
 SPI_IMPLEMENT_ATTACH
 {
+#ifdef _DEBUG
+    ::LESDK::InitializeConsole();
+#endif
     ::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
     ::PNGScreenshots::InitializeHooks(Init);
     return true;
@@ -37,5 +41,10 @@ namespace PNGScreenshots
         CHECK_RESOLVED(appCreateBitmap_target);
         appCreateBitmap_orig = (t_AppCreateBitmap*)Init.InstallHook("AppCreateBitmap", appCreateBitmap_target, appCreateBitmap_hook);
         CHECK_RESOLVED(appCreateBitmap_orig);
+
+        if (TransparentRender::IsTransparentRenderEnabled())
+        {
+            TransparentRender::InitializeHooks(Init);
+        }
     }
 }

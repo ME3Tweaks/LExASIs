@@ -1,6 +1,7 @@
 #include <chrono>
 #include "Common/Base.hpp"
 #include "PNGScreenshots/Hooks.hpp"
+#include "PNGScreenshots/TransparentRender.hpp"
 #include "LESDK/Headers.hpp"
 #include "fpng/fpng.h" // Yes cpp
 #include <algorithm>
@@ -186,6 +187,12 @@ namespace PNGScreenshots
 
 			pixelIndex++;
 			position = pixelIndex * 3;
+		}
+
+		if (TransparentRender::HandleCapture(inputBaseName, width, height, newImageData))
+		{
+			// Consumed as part of a transparent-render capture sequence; don't save/clipboard it normally.
+			return;
 		}
 
         // Determine output filename.
