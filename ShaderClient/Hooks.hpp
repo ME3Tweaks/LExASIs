@@ -14,8 +14,39 @@ namespace ShaderClient
     // If true we should boot into shader compiler level on start
     extern bool BootShaderCompilerLevel;
 
+    // Temporary opt-in for validating LE1-authored opaque materials that use SceneDepth in LE3.
+    // This remains deliberately scoped to the material named below; it does not change material data.
+    extern bool AllowLegacyOpaqueSceneDepthTest;
+
     using tFGetMaterialFriendlyName = FString* (void* fmaterial, FString* OutStr);
     extern tFGetMaterialFriendlyName* FMaterial_GetFriendlyName; // (tFGetMaterialFriendlyName)0x7ff74ab4dec0; // RVA 2BDEC0
+    // NOTE: FMaterial_GetFriendlyName is NOT a virtual call -- it's pinned to this one fixed address,
+    // which is the concrete FMaterialResource::GetFriendlyName body (reads material->Material directly).
+    // Calling it on a FTerrainMaterialResource* never reaches FTerrainMaterialResource's own override;
+    // it silently misreads ->Material the same way the original crash bug did, and happens to come out
+    // as FName index 0 ("None") rather than crashing. Do NOT use it to detect terrain resources -- see
+    // IsTerrainMaterialResource() below, which checks vtable identity instead.
+
+    // vtbl_FTerrainMaterialResource (Ghidra 0x7ff74bb0aa28 / RVA 0x127aa28), resolved at runtime the
+    // same way StringArchiveProxyVTableStart is. FTerrainMaterialResource is the only class that uses
+    // this vtable, so comparing an FMaterial's own vtable pointer against this is a safe, cheap,
+    // non-virtual way to identify a terrain compile -- unlike FMaterial_GetFriendlyName (see above).
+    extern void* TerrainMaterialResourceVTable;
+
+    // Proper virtual dispatch of GetFriendlyName (FMaterial_VTable slot 55, offset 0x1b8 --
+    // confirmed via get_data_type dump / string xref to "TerrainMaterialResource:%s"). Use this
+    // instead of FMaterial_GetFriendlyName for any FMaterial that might be a terrain resource,
+    // since it correctly reaches FTerrainMaterialResource::GetFriendlyName for those.
+    FString* GetFriendlyNameVirtual(FMaterial* fmaterial, FString* OutStr);
+
+    // FTerrainMaterialResource shares FMaterial::Compile/InitShaderMap with regular FMaterialResource
+    // (ATerrain::CacheResourceShaders -> FMaterial::InitShaderMap -> FMaterial::Compile, same address
+    // as UMaterial compiles), but it has no `Material` (UMaterial*) field at the offset FMaterialResource
+    // uses -- casting a terrain compile to FMaterialResource* and touching ->Material reads garbage
+    // (or the FMaterialRenderProxy vtable pointer from FTerrainMaterialResource's second base) and
+    // crashes. Detect terrain resources by comparing the object's own (first) vtable pointer against
+    // TerrainMaterialResourceVTable.
+    bool IsTerrainMaterialResource(FMaterial* fmaterial);
     extern int* GIsSeekFreePCConsole; // Used to trick game into outputting HLSL  @ 0x7ff74c06f724; // RVA 17DF724
 
     // The platform currently being cooked for

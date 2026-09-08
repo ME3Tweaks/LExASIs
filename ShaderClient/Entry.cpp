@@ -67,11 +67,26 @@ namespace ShaderClient
 		if (cli.find(L"-SendDebugPackages") != std::wstring::npos) {
 			SendDebugPackages = true;
 		}
+		if (cli.find(L"-CaptureOnly") != std::wstring::npos) {
+			LEASI_INFO(L"Capture-only mode: shaders will be recorded but not compiled");
+			CaptureOnly = true;
+			SendDebugPackages = true;
+		}
+		if (cli.find(L"-AllowLegacyOpaqueSceneDepthTest") != std::wstring::npos) {
+			LEASI_WARN(L"Enabling the scoped legacy opaque SceneDepth test for LAV70_CAVEWALL02");
+			AllowLegacyOpaqueSceneDepthTest = true;
+		}
 
 		// INIT SHADER MAP - used to trigger hlsl compile when shader fails to load
 		HOOK_PATTERN_POSTHOOK(InitShaderMap, tInitShaderMap, "54 41 55 41 56 41 57 48 81 ec a0 00 00 00 48 c7 44 24 40 fe ff ff ff 49 89 5b 10 49 89 6b 18 49 89 73 20 45 8b e1 45 8b f0 48 8b ea");
 		
 		if (EnableShaderCompile) {
+			// Validated against the currently supported LE3 executable in Ghidra:
+			// FHLSLMaterialTranslator::Translate at RVA 0x2C8BE0. The hook runs after the
+			// native translator generated its HLSL, letting the test filter only its known
+			// compatibility diagnostic without changing package or material state.
+			HOOK_RVA(FHLSLTranslator_Translate, tHLSLTranslate, LEASI_RVA(0x2C8BE0));
+
 			// FMaterialCompile - used to inspect result of shader map compile and actually generate shader cache
 			HOOK_PATTERN_POSTHOOK(FMaterialCompile, tFMaterialCompile, "41 54 41 55 41 56 41 57 48 8d ac 24 38 f8 ff ff 48 81 ec c8 08 00 00 48 c7 45 f8 fe ff ff ff");
 
@@ -124,6 +139,7 @@ namespace ShaderClient
 		// VTables
 		StringArchiveProxyVTableStart = Init.ResolveTyped<void>(LEASI_RVA(0x10dfbf0));
 		MemoryArchiveWriterVTableStart = Init.ResolveTyped<void>(LEASI_RVA(0x107fac8));
+		TerrainMaterialResourceVTable = Init.ResolveTyped<void>(LEASI_RVA(0x127aa28));
 
 		// Functions
 		FMaterial_GetFriendlyName = Init.ResolveTyped<tFGetMaterialFriendlyName>(LEASI_RVA(0x2BDEC0));

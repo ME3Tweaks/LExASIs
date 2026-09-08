@@ -9,6 +9,7 @@
 namespace ShaderClient
 {
 	tFGetMaterialFriendlyName* FMaterial_GetFriendlyName = nullptr;
+	void* TerrainMaterialResourceVTable = nullptr;
 	int* GIsSeekFreePCConsole = nullptr;
 
 	ECookingTarget* GCookingTarget = nullptr;
@@ -27,6 +28,7 @@ namespace ShaderClient
 	tInitShaderMap* InitShaderMap_orig = nullptr;
 	tHLSLTranslate* FHLSLTranslator_Translate = nullptr;
 	tHLSLTranslate* FHLSLTranslator_Translate_orig = nullptr;
+	bool AllowLegacyOpaqueSceneDepthTest = false;
 
 	tCompileWrapper* FMaterial_Compile = nullptr;
 
@@ -109,13 +111,69 @@ namespace ShaderClient
 		return Ar;
 	}
 
+	bool IsTerrainMaterialResource(FMaterial* fmaterial)
+	{
+		// The object's own vtable pointer is its first 8 bytes. FTerrainMaterialResource is the
+		// only class using TerrainMaterialResourceVTable, so this is an exact identity check --
+		// see the comment on TerrainMaterialResourceVTable in Hooks.hpp for why GetFriendlyName()
+		// can't be used for this instead.
+		return *(void**)fmaterial == TerrainMaterialResourceVTable;
+	}
+
+	FString* GetFriendlyNameVirtual(FMaterial* fmaterial, FString* OutStr)
+	{
+		auto vtable = *(void***)fmaterial;
+		auto func = (tFGetMaterialFriendlyName*)vtable[55];
+		return func(fmaterial, OutStr);
+	}
+
+	UBOOL FHLSLTranslator_Translate_hook(FHLSLTranslator* translator)
+	{
+		const auto originalResult = FHLSLTranslator_Translate_orig(translator);
+
+		if (!AllowLegacyOpaqueSceneDepthTest || translator == nullptr || translator->Material == nullptr) {
+			return originalResult;
+		}
+
+		FString materialName;
+		GetFriendlyNameVirtual(translator->Material, &materialName);
+		if (!materialName.Equals(L"LAV70_CAVEWALL02", true)) {
+			return originalResult;
+		}
+
+		// LE2/LE3 emit this after property compilation but continue generating the HLSL. LE1's
+		// equivalent translator has no such error path. Remove precisely that compatibility
+		// diagnostic; all unrelated errors, including scene-color usage, remain fatal.
+		static constexpr const wchar_t* LegacyOpaqueSceneDepthError =
+			L"Only transparent materials can read from scene depth.";
+		auto& compileErrors = translator->Material->CompileErrors;
+		bool onlyCompatibilityErrors = compileErrors.Any();
+		for (UINT index = 0; index < compileErrors.Count(); ++index) {
+			if (!compileErrors(index).Equals(LegacyOpaqueSceneDepthError, false)) {
+				onlyCompatibilityErrors = false;
+				break;
+			}
+		}
+
+		if (!onlyCompatibilityErrors) {
+			return originalResult;
+		}
+
+		compileErrors.Clear();
+		translator->bSuccess = TRUE;
+		LEASI_WARN(L"Permitting legacy opaque SceneDepth test for {}", materialName.Chars());
+		return TRUE;
+	}
+
 	UBOOL InitShaderMap_hook(FMaterial* fmaterial, void* StaticParameters, EShaderPlatform Platform, int Quality)
 	{
-		if (MilanCompileShader == nullptr || !EnableShaderCompile) {
+		// Capture-only runs never call into the compiler, so a missing MilanShaderCompilerLib must
+		// not stop us from tricking the game into requesting compiles — that request is the capture.
+		if ((MilanCompileShader == nullptr && !CaptureOnly) || !EnableShaderCompile) {
 			auto res = InitShaderMap_orig(fmaterial, StaticParameters, Platform, Quality);
 			if (!res) {
 				FString name;
-				FMaterial_GetFriendlyName(fmaterial, &name);
+				GetFriendlyNameVirtual(fmaterial, &name);
 				LEASI_WARN(L"Material requires compile: {}", name.Chars());
 			}
 			return res;
@@ -127,7 +185,7 @@ namespace ShaderClient
 		if (result == FALSE)
 		{
 			FString name;
-			FMaterial_GetFriendlyName(fmaterial, &name);
+			GetFriendlyNameVirtual(fmaterial, &name);
 			LEASI_WARN(L"InitShaderMap failed for material {}", name);
 		}
 		else
@@ -145,7 +203,7 @@ namespace ShaderClient
 	UBOOL FShaderMap_IsComplete_hook(void* map, FMaterial* material)
 	{
 		FString name;
-		FMaterial_GetFriendlyName(material, &name);
+		GetFriendlyNameVirtual(material, &name);
 
 		auto result = FShaderMap_IsComplete_orig(map, material);
 
@@ -161,14 +219,30 @@ namespace ShaderClient
 
 	UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL debugDump)
 	{
-		// Add these as they don't appear to be reliably set from our decooked stuff.
-		fmaterial->Material->bUsedWithStaticLighting = true;
-		fmaterial->Material->bUsedWithVectorLightMaps = true;
-		fmaterial->Material->bUsedWithSimpleLightMaps = true;
+		// FTerrainMaterialResource has no `Material` (UMaterial*) field -- ->Material on one of these
+		// is garbage. Every generic material below the FMaterial interface still works on it, but the
+		// three usage flags below are UMaterial-only fields, and the logging needs a name that doesn't
+		// dereference ->Material. See IsTerrainMaterialResource() in Hooks.hpp for why.
+		bool isTerrain = IsTerrainMaterialResource(fmaterial);
+
+		if (!isTerrain) {
+			// Add these as they don't appear to be reliably set from our decooked stuff.
+			fmaterial->Material->bUsedWithStaticLighting = true;
+			fmaterial->Material->bUsedWithVectorLightMaps = true;
+			fmaterial->Material->bUsedWithSimpleLightMaps = true;
+		}
+		// Terrain doesn't need the equivalent nudge: FTerrainMaterialResource::IsUsedWithStaticLighting()
+		// is hardcoded to always return TRUE already, and there's no single UMaterial to poke for the
+		// lightmap flags -- if terrain-specific lightmap shader variants turn out to be missing, that's
+		// the next thing to look at (see the matching TODO in MilanShaderCompiler.cpp's AddCustomMacros).
+
+		FString friendlyName;
+		GetFriendlyNameVirtual(fmaterial, &friendlyName);
+
 		auto result = FMaterialCompile_orig(fmaterial, parameterSet, shaderplatform, shaderMap, forceCompile, debugDump);
 		if (result) {
 			// Successfully generated material shader
-			LEASI_INFO("Material compiled successfully: {}", fmaterial->Material->Name.GetName());
+			LEASI_INFO(L"Material compiled successfully: {}", friendlyName.Chars());
 
 			SFXName scName(L"TestShaderCache", 0);
 			auto transient = (*GObjTransientPackage)->Class->GetName();
@@ -182,8 +256,8 @@ namespace ShaderClient
 			// Send the material binary to ShaderHost
 			SaveMaterialBinary(fmaterial);
 		}
-		else {
-			LEASI_ERROR("Material failed to compile: {}", fmaterial->Material->Name.GetName());
+		else if (!CaptureOnly) {
+			LEASI_ERROR(L"Material failed to compile: {}", friendlyName.Chars());
 			for (UINT i = 0; i < fmaterial->CompileErrors.Count(); i++) {
 				LEASI_WARN("  {}", fmaterial->CompileErrors.GetData()[i]);
 			}
@@ -201,11 +275,12 @@ namespace ShaderClient
 		//SaveMaterialHLSL(material, materialCode);
 		//return false;
 
-		auto materialObjName = material->Material->GetFullPath();
-
+		// material->Material->GetFullPath() used to be logged here, but ->Material doesn't exist on
+		// FTerrainMaterialResource (see IsTerrainMaterialResource() in Hooks.hpp) -- the friendly name
+		// is available for both and already computed right below, so just use that for logging too.
 		FString name;
-		FMaterial_GetFriendlyName(material, &name);
-		LEASI_INFO(L"Trying to compile material shaders for {}", materialObjName);
+		GetFriendlyNameVirtual(material, &name);
+		LEASI_INFO(L"Trying to compile material shaders for {}", name.Chars());
 		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars())); // Use shortname
 
 		std::vector<ShaderCompileCombo> comboList{};
@@ -239,6 +314,12 @@ namespace ShaderClient
 				var.vertexFactoryType->ModifyCompilationEnvironmentRef(SP_SM5, &env);
 			}
 
+			if (CaptureOnly) {
+				// Record the job and move on. No shader is built, so no shader map is either.
+				CaptureShaderJob(material, &var, env);
+				continue;
+			}
+
 			auto compileOK = CompileSingleShader(material, &var, env, &shaderList);
 			if (!compileOK) {
 				if (var.vertexFactoryType != nullptr) {
@@ -250,6 +331,13 @@ namespace ShaderClient
 			}
 
 			compiledSuccessfully &= compileOK;
+		}
+
+		if (CaptureOnly) {
+			// Nothing was compiled, so there is no shader map to build. Reporting failure keeps
+			// the caller from saving a shader cache full of nothing.
+			LEASI_INFO(L"  Captured {} shader jobs for {}", (int)comboList.size(), name.Chars());
+			return FALSE;
 		}
 
 		// Build the shader map

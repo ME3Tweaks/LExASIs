@@ -3,6 +3,7 @@
 #include "LESDK/Headers.hpp"
 #include "ShaderClient/MilanShaderCompiler.hpp"
 #include "ShaderClient/MilanShaderCompilerShared.h"
+#include "ShaderClient/Hooks.hpp"
 /*
  * Contains methods for use with MilanShaderCompilerLib
  */
@@ -17,11 +18,11 @@ namespace ShaderClient {
 	void LoadCompiler() {
 		auto compilerDLL = LoadLibraryW(L"MilanShaderCompilerLib.dll");
 		if (compilerDLL == nullptr) {
-			LEASI_INFO("Unable to load MilanShaderCompilerLib.dll");
+			LEASI_ERROR("Unable to load MilanShaderCompilerLib.dll");
 		}
 		MilanCompileShader = (tMilanCompileShader*)GetProcAddress(compilerDLL, "CompileShader");
 		if (MilanCompileShader == nullptr) {
-			LEASI_INFO("Unable to locate 'CompileShader' in MilanShaderCompilerLib.dll");
+			LEASI_WARN("Unable to locate 'CompileShader' in MilanShaderCompilerLib.dll");
 		}
 		else {
 			LEASI_INFO("Loaded 'CompileShader' from MilanShaderCompilerLib.dll");
@@ -29,7 +30,7 @@ namespace ShaderClient {
 
 		MilanGetShaderInfo = (tMilanGetShaderInfo*)GetProcAddress(compilerDLL, "GetShaderInfo");
 		if (MilanGetShaderInfo == nullptr) {
-			LEASI_INFO("Unable to locate 'GetShaderInfo' in MilanShaderCompilerLib.dll");
+			LEASI_WARN("Unable to locate 'GetShaderInfo' in MilanShaderCompilerLib.dll");
 		}
 		else {
 			LEASI_INFO("Loaded 'GetShaderInfo' from MilanShaderCompilerLib.dll");
@@ -71,10 +72,37 @@ namespace ShaderClient {
 	}
 
 
-	void AddMacroW(std::vector<D3D_SHADER_MACRO>& Macros, const wchar_t* name, const wchar_t* definition) {
+	/// <summary>
+	/// Adds a macro coming from the engine's ModifyCompilationEnvironment, skipping it when one of
+	/// our own rules already set that name.
+	///
+	/// This used to append unconditionally, so a name set by both sides landed in the array twice
+	/// and which value applied was down to D3DCompile's handling of duplicate defines rather than
+	/// any decision here. Ours now wins deterministically.
+	///
+	/// A skipped entry whose value differs from ours is recorded in outConflicts so the disagreement
+	/// stays visible in debug packages instead of disappearing with the duplicate.
+	/// </summary>
+	void AddMacroW(std::vector<D3D_SHADER_MACRO>& Macros, const wchar_t* name, const wchar_t* definition,
+		std::vector<MacroConflict>* outConflicts) {
+
+		char* nameC = wchar_to_char(name);
+		char* defC = wchar_to_char(definition);
+
+		for (const auto& macro : Macros) {
+			if (macro.Name && nameC && strcmp(macro.Name, nameC) == 0) {
+				if (outConflicts != nullptr && macro.Definition && defC && strcmp(macro.Definition, defC) != 0) {
+					outConflicts->push_back(MacroConflict{ std::string(nameC), std::string(macro.Definition), std::string(defC) });
+				}
+				delete[] nameC;
+				delete[] defC;
+				return;
+			}
+		}
+
 		D3D_SHADER_MACRO macro;
-		macro.Name = wchar_to_char(name);
-		macro.Definition = wchar_to_char(definition);
+		macro.Name = nameC;
+		macro.Definition = defC;
 		Macros.push_back(macro);
 	}
 
@@ -85,27 +113,28 @@ namespace ShaderClient {
 			// Already initialized
 			return;
 		}
+		// XBOXTESSELLATION and NUM_AXIS_ROTATION_VECTORS are left to the engine for the same
+		// reason as QUAT_SKINNING below: its ModifyCompilationEnvironment still emits them, and it
+		// disagreed with these hardcoded values on every shader that set both.
 		VertexFactoryMacrosMap[L"FFluidTessellationVertexFactory"] = {
-			{ "XBOXTESSELLATION", "1" }
 		};
 		VertexFactoryMacrosMap[L"FFluidVertexFactory"] = {
-			{ "XBOXTESSELLATION", "1" }
 		};
+		// QUAT_SKINNING is deliberately not set here. The game's own ModifyCompilationEnvironment
+		// still emits it, and it emits 0 — LE3 ships matrix skinning (BoneMatrices), not the
+		// dual-quaternion path (BoneQuats/DQ0/BoneScales) that hardcoding 1 produced. Letting the
+		// engine supply it keeps the authoritative value instead of guessing per vertex factory.
 		VertexFactoryMacrosMap[L"FGPUSkinDecalVertexFactory"] = {
-			{ "GPUSKIN_DECAL", "1" },
-			{ "QUAT_SKINNING", "1" }
+			{ "GPUSKIN_DECAL", "1" }
 		};
 		VertexFactoryMacrosMap[L"FGPUSkinMorphDecalVertexFactory"] = {
 			{ "GPUSKIN_DECAL", "1" },
-			{ "GPUSKIN_MORPH_BLEND", "1" },
-			{ "QUAT_SKINNING", "1" }
+			{ "GPUSKIN_MORPH_BLEND", "1" }
 		};
 		VertexFactoryMacrosMap[L"FGPUSkinMorphVertexFactory"] = {
-			{ "GPUSKIN_MORPH_BLEND", "1" },
-			{ "QUAT_SKINNING", "1" }
+			{ "GPUSKIN_MORPH_BLEND", "1" }
 		};
 		VertexFactoryMacrosMap[L"FGPUSkinVertexFactory"] = {
-			{ "QUAT_SKINNING", "1" }
 		};
 		VertexFactoryMacrosMap[L"FInstancedStaticMeshVertexFactory"] = {
 			{ "USE_INSTANCING", "1" }
@@ -120,19 +149,16 @@ namespace ShaderClient {
 			{ "WORLD_COORDS", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleBeamTrailDynamicParameterVertexFactory"] = {
-			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
 			{ "PARTICLES_ALLOW_AXIS_ROTATION", "1" },
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
 			{ "USE_DYNAMIC_PARAMETERS", "1" },
 			{ "USE_OCCLUSION_PERCENTAGE", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleBeamTrailVertexFactory"] = {
-			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
 			{ "PARTICLES_ALLOW_AXIS_ROTATION", "1" },
 			{ "USE_OCCLUSION_PERCENTAGE", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleDynamicParameterVertexFactory"] = {
-			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
 			{ "PARTICLES_ALLOW_AXIS_ROTATION", "1" },
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
 			{ "USE_DYNAMIC_PARAMETERS", "1" },
@@ -143,7 +169,6 @@ namespace ShaderClient {
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleSubUVDynamicParameterVertexFactory"] = {
-			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
 			{ "PARTICLES_ALLOW_AXIS_ROTATION", "1" },
 			{ "SIMPLE_VERTEX_LIGHTMAP", "1" },
 			{ "SUBUV_PARTICLES", "1" },
@@ -151,13 +176,11 @@ namespace ShaderClient {
 			{ "USE_OCCLUSION_PERCENTAGE", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleSubUVVertexFactory"] = {
-			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
 			{ "PARTICLES_ALLOW_AXIS_ROTATION", "1" },
 			{ "SUBUV_PARTICLES", "1" },
 			{ "USE_OCCLUSION_PERCENTAGE", "1" }
 		};
 		VertexFactoryMacrosMap[L"FParticleVertexFactory"] = {
-			{ "NUM_AXIS_ROTATION_VECTORS", "1" },
 			{ "PARTICLES_ALLOW_AXIS_ROTATION", "1" },
 			{ "USE_OCCLUSION_PERCENTAGE", "1" }
 		};
@@ -608,7 +631,8 @@ namespace ShaderClient {
 			}
 		}
 		else {
-			LEASI_TRACE(L"Shader type '{}' not found in ShaderTypeMacroMap", shaderTypeName);
+			// No longer relevant
+			//LEASI_TRACE(L"Shader type '{}' not found in ShaderTypeMacroMap", shaderTypeName);
 		}
 
 		std::wstring vertexFactoryNameS(vertexFactoryName.begin(), vertexFactoryName.end());
@@ -663,8 +687,38 @@ namespace ShaderClient {
 
 
 		// ========== PER-MATERIAL MACROS ==========
-		if (material->Material->bUsedWithDecals) {
+		// FTerrainMaterialResource has no `Material` (UMaterial*) field -- ->Material on one of these
+		// is garbage (see IsTerrainMaterialResource() in Hooks.hpp). FTerrainMaterialResource hardcodes
+		// the equivalent decision to FALSE for every flag below, either explicitly (IsDecalMaterial(),
+		// CastLitTranslucencyShadowAsMasked(), RenderTwoSidedSeparatePass() all return FALSE in
+		// UnTerrain.h) or by inherited FMaterial default (IsUsedWithGammaCorrection()), so skipping
+		// these macros for terrain reproduces the same effective behavior instead of guessing at a
+		// vtable slot mapping.
+		bool isTerrain = IsTerrainMaterialResource(material);
+
+		if (!isTerrain && material->Material->bUsedWithDecals) {
 			AddMacro(macros, "MATERIAL_DECAL", "1");
+		}
+
+		// These four are referenced as #if gates by the generated Material.usf but never defined in
+		// it, so they have to come from the compilation environment. UE3 set them in
+		// FMaterial::SetupMaterialEnvironment, which LE3's shipping binary does not contain at all,
+		// so nothing was supplying them. Without MATERIAL_LIT_TRANSLUCENCY_DEPTH_POSTPASS the
+		// translucency depth pass compiled to a bare "write 0" stub instead of clipping on opacity.
+		if (!isTerrain && material->Material->bUseLitTranslucencyDepthPass) {
+			AddMacro(macros, "MATERIAL_LIT_TRANSLUCENCY_PREPASS", "1");
+		}
+
+		if (!isTerrain && material->Material->bUseLitTranslucencyPostRenderDepthPass) {
+			AddMacro(macros, "MATERIAL_LIT_TRANSLUCENCY_DEPTH_POSTPASS", "1");
+		}
+
+		if (!isTerrain && material->Material->bCastLitTranslucencyShadowAsMasked) {
+			AddMacro(macros, "MATERIAL_CAST_LIT_TRANSLUCENCY_SHADOW_AS_MASKED", "1");
+		}
+
+		if (!isTerrain && material->Material->bUsedWithGammaCorrection) {
+			AddMacro(macros, "MATERIAL_USE_GAMMA_CORRECTION", "1");
 		}
 
 		if (material->bUsesVertexColor != 0) {
@@ -678,22 +732,23 @@ namespace ShaderClient {
 		}
 
 
-		// Can't figure out what exactly would set this but it seems to only be on LocalVertexFactory.
-		if (vertexFactoryNameS == L"FLocalVertexFactory" && shaderTypeNameS.starts_with(L"FVelocity")) {
-			AddMacro(macros, "WORLD_COORDS", "1"); 
-		}
-
+		
 		if (material->UsingTransforms & UsedCoord_WorldPos) {
 			// Unlock view coordinate commands in usfs
 			AddMacro(macros, "WORLD_POS", "1");
 		}
 
-		if (material->Material->bUsedWithVectorLightMaps && shaderTypeNameS.find(L"FCustomVectorVertexLightMapPolicy") != std::wstring::npos) {
+		// bUsedWithVectorLightMaps/bUsedWithSimpleLightMaps are plain UMaterial fields with no FMaterial
+		// virtual equivalent, so there's nothing safe to substitute for terrain here. Terrain does use
+		// static lighting (FTerrainMaterialResource::IsUsedWithStaticLighting() is hardcoded TRUE), so
+		// if terrain output is missing one of these lightmap-policy shader variants, this is the first
+		// place to look -- for now this just avoids the ->Material crash by skipping the macro.
+		if (!isTerrain && material->Material->bUsedWithVectorLightMaps && shaderTypeNameS.find(L"FCustomVectorVertexLightMapPolicy") != std::wstring::npos) {
 			AddMacro(macros, "USING_VECTORLIGHTMAPS", "1");
 			AddMacro(macros, "VERTEX_LIGHTMAP", "1");
 		}
 
-		if (material->Material->bUsedWithSimpleLightMaps && shaderTypeNameS.find(L"FCustomSimpleLightMapTexturePolicy") != std::wstring::npos) {
+		if (!isTerrain && material->Material->bUsedWithSimpleLightMaps && shaderTypeNameS.find(L"FCustomSimpleLightMapTexturePolicy") != std::wstring::npos) {
 			AddMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP", "1");
 			AddMacro(macros, "NUM_LIGHTMAP_COEFFICIENTS", "1"); // Redefines it as 1.
 		}
@@ -758,6 +813,16 @@ namespace ShaderClient {
 			AddMacro(macros, "MATERIAL_TWOSIDED", "1");
 		}
 
+		// MaterialTemplate.usf keys OPTIONAL_FacingSign off this: when set, FacingSign is a compile
+		// time constant, and when clear the pixel shader takes an extra VFACE input. Nothing was
+		// supplying it, so every material with the flag got one spurious input signature entry --
+		// bytecode otherwise identical, RDEF/SHEX/STAT byte for byte, only ISGN longer. It is a
+		// material property in its own right, not derivable from IsTwoSided: of the shaders missing
+		// it, most non-two-sided materials were already correct without it.
+		if (!isTerrain && material->Material->TwoSidedSeparatePass) {
+			AddMacro(macros, "MATERIAL_TWOSIDED_SEPARATE_PASS", "1");
+		}
+
 
 		// ========== POST-PROCESSING: REMOVE MACROS ==========
 		// Some shader types should NOT have SIMPLE_VERTEX_LIGHTMAP even when their
@@ -782,17 +847,21 @@ namespace ShaderClient {
 
 		bool isSkyLight = shaderTypeNameS.ends_with(L"SkyLight") && !shaderTypeNameS.ends_with(L"NoSkyLight");
 
-		// SimpleLightMap uses SIMPLE_TEXTURE_LIGHTMAP
+		// SimpleLightMap uses SIMPLE_TEXTURE_LIGHTMAP and must not also have TEXTURE_LIGHTMAP.
+		// This applies to both the SkyLight and NoSkyLight variants; it was previously restricted to
+		// SkyLight, which left the NoSkyLight ones sampling a lightmap texture the shipping shader
+		// does not sample. Verified bit-exact against shipping bytecode for both variants.
 		if (shaderTypeNameS.starts_with(L"TBasePassPixelShaderFSimpleLightMapTexturePolicy")) {
-			if (isSkyLight && !isVertexShader) {
+			if (!isVertexShader) {
 				AddMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP", "1");
 				RemoveMacro(macros, "TEXTURE_LIGHTMAP");
 			}
 		}
 
-		// CustomSimpleLightMap uses TEXTURE_LIGHTMAP
+		// CustomSimpleLightMap is the mirror image: TEXTURE_LIGHTMAP, never SIMPLE_TEXTURE_LIGHTMAP.
+		// Same correction as above — it holds for NoSkyLight too.
 		if (shaderTypeNameS.starts_with(L"TBasePassPixelShaderFCustomSimpleLightMapTexturePolicy")) {
-			if (isSkyLight && !isVertexShader) {
+			if (!isVertexShader) {
 				RemoveMacro(macros, "SIMPLE_TEXTURE_LIGHTMAP");
 				AddMacro(macros, "TEXTURE_LIGHTMAP", "1");
 			}

@@ -56,7 +56,19 @@ namespace ShaderClient {
 
     void LoadCompiler();
 
+    /// <summary>
+    /// A macro the engine tried to set to a different value than one of our own rules already had.
+    /// Ours wins; this records the disagreement so it stays visible in debug packages.
+    /// </summary>
+    struct MacroConflict
+    {
+        std::string Name;
+        std::string MilanValue;
+        std::string EngineValue;
+    };
+
     void AddMacro(std::vector<D3D_SHADER_MACRO>& Macros, const char* name, const char* definition);
-    void AddMacroW(std::vector<D3D_SHADER_MACRO>& Macros, const wchar_t* name, const wchar_t* definition);
+    void AddMacroW(std::vector<D3D_SHADER_MACRO>& Macros, const wchar_t* name, const wchar_t* definition,
+        std::vector<MacroConflict>* outConflicts = nullptr);
     void AddCustomMacros(FMaterialResource* material, ShaderCompileCombo& scc, std::vector<D3D_SHADER_MACRO>& macros);
 }

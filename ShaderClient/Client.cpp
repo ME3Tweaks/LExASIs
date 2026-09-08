@@ -17,6 +17,7 @@ namespace ShaderClient
 	NamedParameterAllocation parameterAllocationBuffer[256]; // There better not be more than this...!
 	std::wstring currentAction;
 	bool SendDebugPackages;
+	bool CaptureOnly;
 
 	void UpdateLoadScreenMessage() {
 		auto interaction = Common::FindFirstObject<USFXGUIInteraction>();
@@ -33,6 +34,26 @@ namespace ShaderClient
 	void UpdateCurrentAction(std::wstring_view newAction) {
 		currentAction = newAction;
 		UpdateLoadScreenMessage();
+	}
+
+	/// <summary>
+	/// Returns the wire-protocol identifying name for a material resource: the UMaterial's full
+	/// package path for regular materials, or the friendly name for terrain resources, which have
+	/// no backing UMaterial (->Material is not a valid field on FTerrainMaterialResource -- see
+	/// IsTerrainMaterialResource() in Hooks.hpp for why that dereference is unsafe).
+	///
+	/// MilanShaderHost currently only knows how to match this name back to a "Material"-class
+	/// export (see OnMaterialCompiled in MilanShaderBuilderFlow.cs), so terrain results identified
+	/// this way still need matching handling added on the C# side before a round trip works end to
+	/// end -- this just keeps the native side from crashing while compiling one.
+	/// </summary>
+	FString GetMaterialWireName(FMaterialResource* material) {
+		if (IsTerrainMaterialResource(material)) {
+			FString name;
+			GetFriendlyNameVirtual(material, &name);
+			return name;
+		}
+		return material->Material->GetFullPath();
 	}
 
 	/// <summary>
@@ -97,10 +118,10 @@ namespace ShaderClient
 	}
 
 	void SaveMaterialHLSL(FMaterialResource* material, wchar_t* materialCode) {
-		auto materialObjName = material->Material->GetFullPath();
+		auto materialObjName = GetMaterialWireName(material);
 
 		FString outStr;
-		auto name = FMaterial_GetFriendlyName(material, &outStr);
+		auto name = GetFriendlyNameVirtual(material, &outStr);
 		UpdateCurrentAction(std::format(L"Sending {}", name->Chars()));
 		LEASI_INFO(L"Send HLSL for {}", materialObjName);
 		auto pipeHandle = CreateHostPipe();
@@ -134,10 +155,10 @@ namespace ShaderClient
 	}
 
 	void SaveMaterialBinary(FMaterialResource* material) {
-		auto materialObjName = material->Material->GetFullPath();
+		auto materialObjName = GetMaterialWireName(material);
 
 		FString outStr;
-		auto name = FMaterial_GetFriendlyName(material, &outStr);
+		auto name = GetFriendlyNameVirtual(material, &outStr);
 
 		UpdateCurrentAction(std::format(L"Saving {}", name->Chars()));
 
@@ -185,20 +206,67 @@ namespace ShaderClient
 		DWORD flags = D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY | D3DCOMPILE_OPTIMIZATION_LEVEL3;
 
 		auto name = std::wstring(scc->shaderType->Name);
-		// Not sure which shader type exactly sets flow control or if its based on some property existing...
-		if (name.find(L"FShadowVertexBufferPolicy") != std::wstring::npos) {
+
+		// Recovered from the RDEF chunk of LE3's own shipping bytecode, which records the flags each
+		// shader was built with. Across 14596 shipping shaders and 114 shader types the value is a
+		// function of shader type alone, with only two values in the whole game: 0x9000, and 0x9400
+		// for every TLightPixelShader* (all 14 of them, uniformly) and nothing else.
+		//
+		// The previous rules were a substring match on FShadowVertexBufferPolicy, which also caught
+		// the TLightVertexShader*FShadowVertexBufferPolicy types that ship as 0x9000, plus a match
+		// on TLightPixelShaderFDirectionalLightPolicy that missed the Point, Spot, SFXPoint and
+		// SphericalHarmonic light pixel shaders.
+		if (name.starts_with(L"TLightPixelShader")) {
 			flags |= D3DCOMPILE_PREFER_FLOW_CONTROL;
 		}
-		//if (name.find(L"TLightPixelShaderFDirectionalLightPolicyFSignedDistanceFieldShadowTexturePolicy") != std::wstring::npos) {
-		if (name.find(L"TLightPixelShaderFDirectionalLightPolicy") != std::wstring::npos ||
-			name.find(L"FBranchingPCFProjectionPixelShader") != std::wstring::npos) {
+
+		// Not present in any material shader map, so we can neither confirm nor refute this
+		// one
+		if (name.find(L"FBranchingPCFProjectionPixelShader") != std::wstring::npos) {
 			flags |= D3DCOMPILE_PREFER_FLOW_CONTROL;
 		}
 
 		return flags;
 	}
 
-	void SendDebugInfoToMilanHost(HANDLE pipeHandle, FMaterialResource* material, ShaderCompileCombo* scc, const FShaderCompilerEnvironment& env, int outShaderSize, const std::vector<D3D_SHADER_MACRO>& Macros) {
+	/// <summary>
+	/// Assembles the macro list for a shader exactly as the compile path needs it, and reports how
+	/// many entries came from our own rules rather than from the game.
+	///
+	/// Entries [0, outInjectedCount) are ours (the fixed profile macros plus AddCustomMacros); the
+	/// remainder come from the game's own ModifyCompilationEnvironment. Recording that boundary is
+	/// what lets the offline harness tell the two apart, which the merged list alone cannot express.
+	/// Merge semantics are deliberately unchanged: our rules dedup against each other, and the
+	/// engine's macros are appended as-is.
+	/// </summary>
+	void BuildShaderMacros(FMaterialResource* material, ShaderCompileCombo* scc, const FShaderCompilerEnvironment& env,
+		std::vector<D3D_SHADER_MACRO>& Macros, size_t& outInjectedCount, std::vector<MacroConflict>& outConflicts) {
+
+		AddMacro(Macros, "SM5_PROFILE", "1");
+		AddMacro(Macros, "SUPPORTS_DEPTH_TEXTURES", "1"); // Always set for SM5
+		if (scc->shaderType->Frequency == SF_VERTEX) {
+			AddMacro(Macros, "VERTEXSHADER", "1");
+		}
+		else {
+			AddMacro(Macros, "PIXELSHADER", "1");
+		}
+
+		if (scc->vertexFactoryType != nullptr) {
+			AddMacro(Macros, "NUM_SAMPLES", "1");
+		}
+
+		AddCustomMacros(material, *scc, Macros);
+
+		outInjectedCount = Macros.size();
+
+		// Add Macros set by the engine itself. Names we already set win; disagreements are recorded.
+		for (auto&& pair : env.macroDefinitions)
+		{
+			AddMacroW(Macros, pair.Key.Chars(), pair.Value.Chars(), &outConflicts);
+		}
+	}
+
+	void SendDebugInfoToMilanHost(HANDLE pipeHandle, FMaterialResource* material, ShaderCompileCombo* scc, const FShaderCompilerEnvironment& env, int outShaderSize, const std::vector<D3D_SHADER_MACRO>& Macros, DWORD compileFlags, size_t injectedCount, const std::vector<MacroConflict>& conflicts) {
 		// Generate a debug package to ship to ShaderHost
 		DWORD numBytesWritten = 0;
 		BYTE cmd_sc = static_cast<BYTE>(ShaderHostCommand::SaveDebugInfo);
@@ -206,7 +274,7 @@ namespace ShaderClient
 
 		// Metadata of package for ShaderHost
 		// Material Name
-		auto fullPath = material->Material->GetFullPath();
+		auto fullPath = GetMaterialWireName(material);
 		WriteSizedData(pipeHandle, fullPath.Length() * 2, fullPath.Chars());
 
 		// Build package
@@ -221,18 +289,39 @@ namespace ShaderClient
 		debugInfo["sourceFilename"] = ws2s(scc->shaderType->SourceFilename);
 		debugInfo["functionName"] = ws2s(scc->shaderType->FunctionName);
 		debugInfo["materialHlsl"] = ws2s(env.materialHlslString);
+		// outShaderSize is -1 when the job was captured without compiling, which must not be
+		// confused with a compile that ran and failed.
+		debugInfo["compileAttempted"] = outShaderSize >= 0;
 		debugInfo["compileSucceeded"] = outShaderSize > 0;
 		debugInfo["profile"] = scc->shaderType->Frequency == SF_VERTEX ? "vs" : "ps";
 
 		nlohmann::json macrosArray = nlohmann::json::array();
+		size_t index = 0;
 		for (const auto& macro : Macros) {
 			if (macro.Name == nullptr) break;
 			nlohmann::json macroObj;
 			macroObj["name"] = macro.Name;
 			macroObj["definition"] = macro.Definition;
+			// "milan" = one of our rules, "engine" = the game's ModifyCompilationEnvironment.
+			macroObj["source"] = index < injectedCount ? "milan" : "engine";
 			macrosArray.push_back(macroObj);
+			index++;
 		}
 		debugInfo["macros"] = macrosArray;
+
+		// Needed for the offline harness to reproduce this compile exactly.
+		debugInfo["compileFlags"] = (uint32_t)compileFlags;
+
+		// Macros where the engine disagreed with one of our rules. Ours was used.
+		nlohmann::json conflictsArray = nlohmann::json::array();
+		for (const auto& c : conflicts) {
+			nlohmann::json obj;
+			obj["name"] = c.Name;
+			obj["milanValue"] = c.MilanValue;
+			obj["engineValue"] = c.EngineValue;
+			conflictsArray.push_back(obj);
+		}
+		debugInfo["macroConflicts"] = conflictsArray;
 
 		std::string debugJson = debugInfo.dump();
 
@@ -251,37 +340,9 @@ namespace ShaderClient
 		shaderType[2] = '\0';
 
 		std::vector<D3D_SHADER_MACRO> Macros;
-		// Setup extra required macros here
-		AddMacro(Macros, "SM5_PROFILE", "1");
-		AddMacro(Macros, "SUPPORTS_DEPTH_TEXTURES", "1"); // Always set for SM5
-		if (scc->shaderType->Frequency == SF_VERTEX) {
-			AddMacro(Macros, "VERTEXSHADER", "1");
-		}
-		else {
-			AddMacro(Macros, "PIXELSHADER", "1");
-		}
-
-		if (scc->vertexFactoryType != nullptr) {
-			AddMacro(Macros, "NUM_SAMPLES", "1");
-		}
-
-		AddCustomMacros(material, *scc, Macros);
-
-		// Add Macros set by the engine itself
-		if (scc->vertexFactoryType != nullptr) {
-			//LEASI_TRACE(L"\t{}/{}", scc->shaderType->Name, scc->vertexFactoryType->Name);
-		}
-		else {
-			//LEASI_TRACE(L"\t{}", scc->shaderType->Name);
-		}
-		for (auto&& pair : env.macroDefinitions)
-		{
-			auto key = pair.Key;
-			auto value = pair.Value;
-
-			//LEASI_TRACE(L"\t\tAdding macro from env: {} = {}", key.Chars(), value.Chars());
-			AddMacroW(Macros, key.Chars(), value.Chars());
-		}
+		size_t injectedCount = 0;
+		std::vector<MacroConflict> macroConflicts;
+		BuildShaderMacros(material, scc, env, Macros, injectedCount, macroConflicts);
 
 		// Add Terminator
 		D3D_SHADER_MACRO finalMacro;
@@ -364,7 +425,7 @@ namespace ShaderClient
 
 		if (outShaderSize <= 0) {
 			if (SendDebugPackages) {
-				SendDebugInfoToMilanHost(pipeHandle, material, scc, env, outShaderSize, Macros);
+				SendDebugInfoToMilanHost(pipeHandle, material, scc, env, outShaderSize, Macros, compileFlags, injectedCount, macroConflicts);
 			}
 			return false; // Can't do anything more
 		}
@@ -441,12 +502,33 @@ namespace ShaderClient
 		// Enable to make debugging much easier
 		if (SendDebugPackages)
 		{
-			SendDebugInfoToMilanHost(pipeHandle, material, scc, env, outShaderSize, Macros);
+			SendDebugInfoToMilanHost(pipeHandle, material, scc, env, outShaderSize, Macros, compileFlags, injectedCount, macroConflicts);
 		}
 
 		// Add shader to the map
 		shaderList->emplace_back(shader);
 		return true;
+	}
+
+	/// <summary>
+	/// Records everything the offline harness needs to reproduce this compile, without compiling.
+	///
+	/// Capture runs exist to build a calibration corpus, and the compile is both the slow part and
+	/// the part whose result we are trying to second-guess. Skipping it also avoids allocating the
+	/// FShaders the game cannot free, which is what makes long capture runs survivable.
+	/// </summary>
+	void CaptureShaderJob(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env) {
+		auto pipeHandle = CreateHostPipe();
+
+		std::vector<D3D_SHADER_MACRO> Macros;
+		size_t injectedCount = 0;
+		std::vector<MacroConflict> macroConflicts;
+		BuildShaderMacros(material, scc, env, Macros, injectedCount, macroConflicts);
+
+		DWORD compileFlags = GetCompileFlags(scc);
+
+		// outShaderSize of 0 would read as a compile failure, so report -1 to mark "not attempted".
+		SendDebugInfoToMilanHost(pipeHandle, material, scc, env, -1, Macros, compileFlags, injectedCount, macroConflicts);
 	}
 
 	void GetShaderTypesToCompile(FMaterial* Material, std::vector<ShaderCompileCombo>& outToCompile) {
@@ -512,6 +594,12 @@ namespace ShaderClient
 		}
 
 		// NON-MESH MATERIALS =====================
+		// Terrain materials have no non-mesh shader variants -- they're only ever rendered
+		// through terrain vertex factories. FTerrainMaterialResource::ShouldCache (Ghidra
+		// 0x7ff74b09cb90) unconditionally dereferences the VertexFactoryType* passed to it
+		// (to compare its Name against "FTerrainVertexFactory" etc.), so calling it here with
+		// NULL -- which is correct for ordinary materials' non-mesh shader types -- crashes.
+		if (!IsTerrainMaterialResource(Material))
 		{
 			auto shaderList = *shaderAddr;
 			while (shaderList != nullptr) {
