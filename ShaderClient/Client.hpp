@@ -13,7 +13,8 @@ namespace ShaderClient
 		ShaderCompileFailed = 3,
 		SaveMaterialBinary = 4,
 		SaveMaterialHLSL = 5,
-		SaveDebugInfo = 6
+		SaveDebugInfo = 6,
+		SaveTerrainMaterialResource = 7
 	};
 	extern std::wstring currentAction;
 	extern bool SendDebugPackages;
@@ -26,6 +27,7 @@ namespace ShaderClient
 
 	void SaveShaderCache(UShaderCache* shaderCache);
 	void SaveMaterialBinary(FMaterialResource* material);
+	void SaveTerrainMaterialResource(FMaterialResource* material);
 	void SaveMaterialHLSL(FMaterialResource* material, wchar_t* materialCode);
 
 	bool CompileSingleShader(FMaterialResource* material, ShaderCompileCombo* scc, FShaderCompilerEnvironment& env, std::vector<FShader*>* shaderList);

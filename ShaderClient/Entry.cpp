@@ -117,6 +117,9 @@ namespace ShaderClient
 		}
 	
 		HOOK_RVA(FShaderMap_IsComplete, tShaderMapIsComplete, LEASI_RVA(0x2ae400));
+		// Verified in LE3 11.3.2 Ghidra: ATerrain::GetCachedMaterial @ 0x7ff74b097c70.
+		// This is the authoritative terrain-mask selection/fallback boundary.
+		HOOK_RVA(ATerrain_GetCachedMaterial, tTerrainGetCachedMaterial, LEASI_RVA(0x807c70));
 
 		// Used to redirect us to the shader compiler levels
 		HOOK_RVA(UObject_ProcessInternal, t_UObject_ProcessInternal, BUILTIN_PROCESSINTERNAL_RVA);
@@ -148,6 +151,7 @@ namespace ShaderClient
 		GetVertexFactoryTypeList = Init.ResolveTyped<tGetVertexFactoryTypeList>(LEASI_RVA(0x8d4830));
 		SerializeUShaderCache = Init.ResolveTyped<tSerializeUShaderCache>(LEASI_RVA(0x376840));
 		SerializeMaterialResource = Init.ResolveTyped<tSerializeMaterialResource>(LEASI_RVA(0x2c56a0));
+		SerializeTerrainMaterialResource = Init.ResolveTyped<tSerializeTerrainMaterialResource>(LEASI_RVA(0x7feac0));
 		// SerializeFUniformExpressionSet = Init.ResolveTyped<tSerializeFUniformExpressionSet>(LEASI_RVA(0x2C66B0));
 		static_construct_object = Init.ResolveTyped<tStaticConstructObject>(BUILTIN_STATICCONSTRUCTOBJECT_RVA);
 		FStaticParameterSet::StaticParameterSetEqualRef = Init.ResolveTyped<FStaticParameterSet::tStaticParameterSetEqual>(LEASI_RVA(0x2A46A0));

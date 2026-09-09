@@ -11,6 +11,111 @@
 
 namespace ShaderClient
 {
+    namespace
+    {
+#pragma pack(push, 1)
+        /// <summary>
+        /// The native-only tail of LE3 11.3.2's FTerrainMaterialResource. FMaterial ends directly
+        /// before Terrain at 0x1EC; this deliberately models only the serialized fields needed to
+        /// reproduce FTerrainMaterialResource::PreSave. Pack it because Terrain itself is not
+        /// naturally aligned in the shipping layout.
+        /// </summary>
+        struct FTerrainMaterialResourceSaveState
+        {
+            BYTE FMaterialState[0x1EC];
+            ATerrain* Terrain;
+            UINT64 MaskBitMask;
+            INT MaskNumBits;
+            TArray<FGuid> MaterialIds;
+        };
+#pragma pack(pop)
+
+        static_assert(offsetof(FTerrainMaterialResourceSaveState, Terrain) == 0x1EC);
+        static_assert(offsetof(FTerrainMaterialResourceSaveState, MaskBitMask) == 0x1F4);
+        static_assert(offsetof(FTerrainMaterialResourceSaveState, MaskNumBits) == 0x1FC);
+        static_assert(offsetof(FTerrainMaterialResourceSaveState, MaterialIds) == 0x200);
+
+        constexpr FGuid ZeroGuid{ 0, 0, 0, 0 };
+
+        /// <summary>
+        /// Mirrors FTerrainMaterialResource::PreSave for the already-compiled runtime resource.
+        /// The in-game compile callback happens before package pre-save, so without this ShaderHost
+        /// receives an empty MaterialIds array and LE3 invalidates the terrain shader cache on load.
+        /// </summary>
+        void PopulateTerrainMaterialIds(FMaterial* material, ATerrain* terrain)
+        {
+            auto& terrainResource = *reinterpret_cast<FTerrainMaterialResourceSaveState*>(material);
+            if (terrainResource.Terrain != terrain)
+            {
+                LEASI_ERROR("Terrain resource owner changed while saving shader output.");
+                return;
+            }
+
+            if (terrainResource.MaskNumBits < 0 || terrainResource.MaskNumBits > 64)
+            {
+                LEASI_ERROR("Cannot populate terrain MaterialIds: invalid {}-bit mask.", terrainResource.MaskNumBits);
+                return;
+            }
+
+            LEASI_INFO(L"Terrain dependency input: mask={:X}/{} bits, weighted-materials={}",
+                terrainResource.MaskBitMask, terrainResource.MaskNumBits, terrain->WeightedMaterials.Count());
+            terrainResource.MaterialIds.Clear();
+            for (INT materialIndex = 0; materialIndex < terrainResource.MaskNumBits; materialIndex++)
+            {
+                if ((terrainResource.MaskBitMask & (UINT64(1) << materialIndex)) == 0)
+                {
+                    continue;
+                }
+
+                FGuid materialId = ZeroGuid;
+                if (materialIndex < static_cast<INT>(terrain->WeightedMaterials.Count()))
+                {
+                    const auto& weightedMaterial = terrain->WeightedMaterials(materialIndex);
+                    if (weightedMaterial.Material != nullptr && weightedMaterial.Material->Material != nullptr)
+                    {
+                        // GetMaterial resolves a material instance to its concrete UMaterial. Terrain
+                        // uses the high-quality resource (MSQ_TERRAIN == MSQ_HIGH == slot 0).
+                        auto baseMaterial = weightedMaterial.Material->Material->GetMaterial();
+                        auto materialResource = baseMaterial == nullptr
+                            ? nullptr
+                            : reinterpret_cast<FMaterial*>(baseMaterial->MaterialResources[0]);
+
+                        if (baseMaterial != nullptr)
+                        {
+                            auto terrainMaterialPath = weightedMaterial.Material->GetFullPath();
+                            auto materialInterfacePath = weightedMaterial.Material->Material->GetFullPath();
+                            auto baseMaterialPath = baseMaterial->GetFullPath();
+                            auto resourceOwner = materialResource == nullptr
+                                ? nullptr
+                                : reinterpret_cast<FMaterialResource*>(materialResource)->Material;
+                            // This is the exact selected material input for the current terrain mask.
+                            // Keep full paths: terrain dependencies are often authored in other packages,
+                            // and the short terrain-material name alone is not enough to identify a missing graph.
+                            LEASI_INFO(L"  Terrain input [{}]: terrain-material={}, interface={}, base={}, expressions={}, terrain-resource={}, owner-matches={}",
+                                materialIndex,
+                                terrainMaterialPath.Chars(),
+                                materialInterfacePath.Chars(),
+                                baseMaterialPath.Chars(),
+                                baseMaterial->Expressions.Count(),
+                                materialResource != nullptr,
+                                resourceOwner == baseMaterial);
+                        }
+                        if (materialResource != nullptr)
+                        {
+                            materialId = materialResource->MaterialGuid;
+                        }
+                    }
+                }
+                LEASI_INFO(L"  Terrain dependency {}: {:08X}-{:08X}-{:08X}-{:08X}", materialIndex,
+                    materialId.A, materialId.B, materialId.C, materialId.D);
+                terrainResource.MaterialIds.Add(materialId);
+            }
+
+            LEASI_INFO(L"Terrain resource has {} dependency IDs for mask {:X}.",
+                terrainResource.MaterialIds.Count(), terrainResource.MaskBitMask);
+        }
+    }
+
 #define ERROR_MESSAGE_BUFFER_SIZE 2048
 	BYTE shaderBuffer[4096 * 1024]; // 4MB buffer for shader bytecode
 	char errorMessage[ERROR_MESSAGE_BUFFER_SIZE]; // 2KiB bytes for error message.
@@ -37,15 +142,11 @@ namespace ShaderClient
 	}
 
 	/// <summary>
-	/// Returns the wire-protocol identifying name for a material resource: the UMaterial's full
-	/// package path for regular materials, or the friendly name for terrain resources, which have
-	/// no backing UMaterial (->Material is not a valid field on FTerrainMaterialResource -- see
-	/// IsTerrainMaterialResource() in Hooks.hpp for why that dereference is unsafe).
-	///
-	/// MilanShaderHost currently only knows how to match this name back to a "Material"-class
-	/// export (see OnMaterialCompiled in MilanShaderBuilderFlow.cs), so terrain results identified
-	/// this way still need matching handling added on the C# side before a round trip works end to
-	/// end -- this just keeps the native side from crashing while compiling one.
+	/// Returns an identifier for diagnostics and legacy material/HLSL messages: the UMaterial's full
+	/// package path for regular materials, or a virtual friendly name for terrain resources, which
+	/// have no backing UMaterial (->Material is not a valid field on FTerrainMaterialResource -- see
+	/// IsTerrainMaterialResource() in Hooks.hpp for why that dereference is unsafe). Persisted terrain
+	/// resources use SaveTerrainMaterialResource's owner-terrain path instead.
 	/// </summary>
 	FString GetMaterialWireName(FMaterialResource* material) {
 		if (IsTerrainMaterialResource(material)) {
@@ -200,6 +301,53 @@ namespace ShaderClient
 
 		// Destroy Writer
 		Writer.VTable->Destructor(&Writer);
+	}
+
+	/// <summary>
+	/// Serializes a complete LE3 FTerrainMaterialResource. The resource is created by ATerrain and
+	/// has no backing UMaterial, so the ordinary FMaterialResource serializer is insufficient: it
+	/// omits the terrain owner, layer mask, dependency material IDs and lighting GUID that make the
+	/// cache entry valid on a later load.
+	/// </summary>
+	void SaveTerrainMaterialResource(FMaterialResource* material) {
+		// Verified against LE3 11.3.2's FTerrainMaterialResource::GetFriendlyName and the exact
+		// serializer called by ATerrain::Serialize: Terrain is the UObject* at offset 0x1EC. Keep
+		// this build-specific layout fact isolated here; every other part of the protocol uses
+		// serialized data rather than reaching into the native resource.
+		constexpr size_t TerrainOwnerOffset = 0x1EC;
+		auto terrain = *reinterpret_cast<ATerrain**>(reinterpret_cast<BYTE*>(material) + TerrainOwnerOffset);
+		if (terrain == nullptr) {
+			LEASI_ERROR("Cannot send terrain material resource: owner terrain is null.");
+			return;
+		}
+
+        PopulateTerrainMaterialIds(material, terrain);
+
+		auto terrainPath = terrain->GetFullPath();
+		UpdateCurrentAction(std::format(L"Saving terrain resource for {}", terrainPath.Chars()));
+
+		auto pipeHandle = CreateHostPipe();
+		DWORD numBytesWritten = 0;
+		BYTE command = static_cast<BYTE>(ShaderHostCommand::SaveTerrainMaterialResource);
+		WriteFile(pipeHandle, &command, 1, &numBytesWritten, NULL);
+
+		const int terrainPathSize = terrainPath.Length() * sizeof(wchar_t);
+		WriteFile(pipeHandle, &terrainPathSize, sizeof(terrainPathSize), &numBytesWritten, NULL);
+		WriteFile(pipeHandle, terrainPath.Chars(), terrainPathSize, &numBytesWritten, NULL);
+
+		TArray<BYTE> outputData;
+		FMemoryWriter writer(outputData);
+		SetVTable((void**)&writer, MemoryArchiveWriterVTableStart);
+		FArchiveProxy proxyArchive = GetStringWithObjectWriterProxy(writer);
+
+		*GCookingTarget = CT_WindowsConsole;
+		SerializeTerrainMaterialResource((FArchive*)&proxyArchive, material);
+		*GCookingTarget = CT_Unknown;
+
+		const auto byteCount = writer.Data.Count();
+		WriteFile(pipeHandle, &byteCount, sizeof(byteCount), &numBytesWritten, NULL);
+		WriteFile(pipeHandle, writer.Data.GetData(), byteCount, &numBytesWritten, NULL);
+		writer.VTable->Destructor(&writer);
 	}
 
 	DWORD GetCompileFlags(ShaderCompileCombo* scc) {
@@ -453,7 +601,9 @@ namespace ShaderClient
 		FGuid guid = FGuid::MakeRandomGuid();
 
 		// I am not sure what happens if you pass a larger struct than expected in; it is a pointer... so it should be fine?
-		VertexCompiledShaderData compiledInfo;
+		// ConstructCompiledRef reads this payload synchronously. Zero every field first so
+		// non-mesh shaders never inherit a stale VertexFactoryType/Unknown pointer from the stack.
+		VertexCompiledShaderData compiledInfo{};
 
 		TArray<BYTE> shaderData(shaderBuffer, outShaderSize);
 		compiledInfo.Code = &shaderData;
@@ -533,6 +683,7 @@ namespace ShaderClient
 
 	void GetShaderTypesToCompile(FMaterial* Material, std::vector<ShaderCompileCombo>& outToCompile) {
 		auto shaderAddr = GetShaderTypeList();
+		const bool isTerrainMaterial = IsTerrainMaterialResource(Material);
 		// MESH MATERIALS =====================
 		{
 			// Determine if we should cache this shader or not.
@@ -544,8 +695,19 @@ namespace ShaderClient
 			FVertexFactoryType* vertexFactoryType = nullptr;
 			while (vertexFactoryList != nullptr) {
 				// Loop over all vertex factories.
-				if (vertexFactoryList->CurrentItem->bUsedWithMaterials) {
-					vertexFactoryType = vertexFactoryList->CurrentItem;
+			auto* currentVertexFactory = vertexFactoryList->CurrentItem;
+			// Terrain's morph/decal factories are not consistently marked bUsedWithMaterials in
+			// LE3's global registry, despite being valid FTerrainMaterialResource::ShouldCache
+			// candidates. Filtering them here produced a map containing only
+			// FTerrainVertexFactory; terrain components that select a morph factory subsequently
+			// render the rainbow fallback. Keep the generic gate for normal materials, but submit
+			// every FTerrain* factory to LE3's own three ShouldCache predicates for terrain.
+			const bool isTerrainVertexFactory = isTerrainMaterial
+				&& currentVertexFactory != nullptr
+				&& currentVertexFactory->Name != nullptr
+				&& wcsstr(currentVertexFactory->Name, L"FTerrain") == currentVertexFactory->Name;
+			if (currentVertexFactory->bUsedWithMaterials || isTerrainVertexFactory) {
+				vertexFactoryType = currentVertexFactory;
 					auto shaderList = *shaderAddr;
 					while (shaderList != nullptr) {
 						// Loop over shader types

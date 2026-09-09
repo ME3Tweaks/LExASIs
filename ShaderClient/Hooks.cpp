@@ -49,6 +49,7 @@ namespace ShaderClient
 	tSerializeUShaderCache* SerializeUShaderCache = nullptr;
 
 	tSerializeMaterialResource* SerializeMaterialResource = nullptr;
+	tSerializeTerrainMaterialResource* SerializeTerrainMaterialResource = nullptr;
 
 	tSerializeFUniformExpressionSet* SerializeFUniformExpressionSet = nullptr;
 
@@ -135,12 +136,6 @@ namespace ShaderClient
 			return originalResult;
 		}
 
-		FString materialName;
-		GetFriendlyNameVirtual(translator->Material, &materialName);
-		if (!materialName.Equals(L"LAV70_CAVEWALL02", true)) {
-			return originalResult;
-		}
-
 		// LE2/LE3 emit this after property compilation but continue generating the HLSL. LE1's
 		// equivalent translator has no such error path. Remove precisely that compatibility
 		// diagnostic for any opted-in legacy material; all unrelated errors, including scene-color
@@ -168,10 +163,89 @@ namespace ShaderClient
 
 	UBOOL InitShaderMap_hook(FMaterial* fmaterial, void* StaticParameters, EShaderPlatform Platform, int Quality)
 	{
+		const bool isTerrain = IsTerrainMaterialResource(fmaterial);
+		FString terrainName;
+		if (isTerrain)
+		{
+			GetFriendlyNameVirtual(fmaterial, &terrainName);
+		}
+
 		// Capture-only runs never call into the compiler, so a missing MilanShaderCompilerLib must
 		// not stop us from tricking the game into requesting compiles — that request is the capture.
 		if ((MilanCompileShader == nullptr && !CaptureOnly) || !EnableShaderCompile) {
 			auto res = InitShaderMap_orig(fmaterial, StaticParameters, Platform, Quality);
+			if (isTerrain)
+			{
+				auto* shaderMap = fmaterial->ShaderMap.Object;
+				// InitShaderMap only establishes that the individual resource can be used. Dump the
+				// owning terrain's live cache at this exact point as well: it lets a no-compile run
+				// distinguish an accepted resource from one that was saved to the wrong cache array,
+				// or that is no longer present in the runtime cache that components will query.
+				constexpr size_t TerrainOwnerOffset = 0x1EC;
+				constexpr size_t TerrainMaskOffset = 0x1F4;
+				constexpr size_t TerrainMaskBitsOffset = 0x1FC;
+				auto* terrain = *reinterpret_cast<ATerrain**>(reinterpret_cast<BYTE*>(fmaterial) + TerrainOwnerOffset);
+				auto mask = *reinterpret_cast<UINT64*>(reinterpret_cast<BYTE*>(fmaterial) + TerrainMaskOffset);
+				auto maskBits = *reinterpret_cast<INT*>(reinterpret_cast<BYTE*>(fmaterial) + TerrainMaskBitsOffset);
+				LEASI_INFO(L"Terrain InitShaderMap: resource={}, result={}, platform={}, quality={}, shader-map={}, pixel2D={}",
+					terrainName.Chars(),
+					res != FALSE ? L"ready" : L"not-ready",
+					static_cast<int>(Platform),
+					Quality,
+					static_cast<void*>(shaderMap),
+					shaderMap == nullptr ? 0 : shaderMap->UniformExpressionSet.Uniform2DTextureExpressions.Count());
+				if (shaderMap != nullptr)
+				{
+					// A shader-map completeness result does not show which mesh vertex-factory
+					// submaps were deserialized. Terrain's draw path can only use one of the
+					// FTerrain* factories, so enumerate those exact lookup keys and their
+					// material shader-map entries. This is read-only and runs only for terrain.
+					auto vertexFactoryList = *GetVertexFactoryTypeList();
+					while (vertexFactoryList != nullptr)
+					{
+						auto* vertexFactory = vertexFactoryList->CurrentItem;
+						if (vertexFactory != nullptr && vertexFactory->Name != nullptr && wcsstr(vertexFactory->Name, L"Terrain") != nullptr)
+						{
+							auto lookupKey = vertexFactory;
+							auto* meshShaderMap = shaderMap->VertexFactoryMap.Find(std::move(lookupKey));
+							LEASI_INFO(L"  Terrain vertex factory: name={}, shader-file={}, map-entry={}, mesh-map={}",
+								vertexFactory->Name,
+								vertexFactory->ShaderFilename == nullptr ? L"<none>" : vertexFactory->ShaderFilename,
+								meshShaderMap != nullptr,
+								meshShaderMap == nullptr ? nullptr : static_cast<void*>(*meshShaderMap));
+						}
+						vertexFactoryList = vertexFactoryList->NextItem;
+					}
+				}
+				LEASI_INFO(L"Terrain cache ownership: terrain={}, resource={}, mask={:X}/{} bits, primary={}, secondary={}",
+					static_cast<void*>(terrain),
+					static_cast<void*>(fmaterial),
+					mask,
+					maskBits,
+					terrain == nullptr ? 0 : terrain->CachedTerrainMaterials[0].CachedMaterials.Count(),
+					terrain == nullptr ? 0 : terrain->CachedTerrainMaterials[1].CachedMaterials.Count());
+				if (terrain != nullptr)
+				{
+					for (INT cacheIndex = 0; cacheIndex < 2; cacheIndex++)
+					{
+						auto& cachedMaterials = terrain->CachedTerrainMaterials[cacheIndex].CachedMaterials;
+						for (UINT entryIndex = 0; entryIndex < cachedMaterials.Count(); entryIndex++)
+						{
+							auto* cachedResource = reinterpret_cast<FMaterial*>(cachedMaterials(entryIndex));
+							auto cachedMask = *reinterpret_cast<UINT64*>(reinterpret_cast<BYTE*>(cachedResource) + TerrainMaskOffset);
+							auto cachedMaskBits = *reinterpret_cast<INT*>(reinterpret_cast<BYTE*>(cachedResource) + TerrainMaskBitsOffset);
+							LEASI_INFO(L"  Terrain cache[{}][{}]: resource={}, current={}, mask={:X}/{} bits, shader-map={}",
+								cacheIndex,
+								entryIndex,
+								static_cast<void*>(cachedResource),
+								cachedResource == fmaterial,
+								cachedMask,
+								cachedMaskBits,
+								static_cast<void*>(cachedResource->ShaderMap.Object));
+						}
+					}
+				}
+			}
 			if (!res) {
 				FString name;
 				GetFriendlyNameVirtual(fmaterial, &name);
@@ -210,6 +284,13 @@ namespace ShaderClient
 
 		auto result = FShaderMap_IsComplete_orig(map, material);
 
+		if (IsTerrainMaterialResource(material))
+		{
+			LEASI_INFO(L"Terrain shader-map completeness: resource={}, map={}, result={}",
+				name.Chars(),
+				map,
+				result != FALSE ? L"complete" : L"incomplete");
+		}
 		if (result == 0) {
 			LEASI_WARN(L"\tShader map incomplete for material {}", name);
 		}
@@ -220,7 +301,43 @@ namespace ShaderClient
 		return result;
 	}
 
-	UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL debugDump)
+	tTerrainGetCachedMaterial* ATerrain_GetCachedMaterial_orig = nullptr;
+	void* ATerrain_GetCachedMaterial_hook(ATerrain* terrain, const void* mask, UBOOL* outIsTerrainResource)
+	{
+		// Confirmed against LE3 11.3.2 at 0x7ff74b097c70: FTerrainMaterialMask is
+		// { UINT64 BitMask; INT NumBits; }, and a successful return is the terrain
+		// resource's FMaterialRenderProxy base at +0xB4.
+		struct FTerrainMaterialMaskRuntime
+		{
+			UINT64 BitMask;
+			INT NumBits;
+		};
+
+		auto* result = ATerrain_GetCachedMaterial_orig(terrain, mask, outIsTerrainResource);
+		const auto* requestedMask = reinterpret_cast<const FTerrainMaterialMaskRuntime*>(mask);
+		const bool selectedTerrainResource = outIsTerrainResource != nullptr && *outIsTerrainResource != FALSE;
+		auto* selectedResource = selectedTerrainResource
+			? reinterpret_cast<FMaterial*>(reinterpret_cast<BYTE*>(result) - 0xB4)
+			: nullptr;
+		FString terrainPath = terrain == nullptr ? FString(L"<null terrain>") : terrain->GetFullPath();
+
+		LEASI_INFO(L"Terrain material selection: terrain={}, requested-mask={:X}/{} bits, result={}, terrain-resource={}, resource={}, shader-map={}",
+			terrainPath.Chars(),
+			requestedMask == nullptr ? 0 : requestedMask->BitMask,
+			requestedMask == nullptr ? 0 : requestedMask->NumBits,
+			result,
+			selectedTerrainResource,
+			static_cast<void*>(selectedResource),
+			selectedResource == nullptr ? nullptr : static_cast<void*>(selectedResource->ShaderMap.Object));
+
+		if (!selectedTerrainResource)
+		{
+			LEASI_WARN(L"Terrain selected EngineMaterials.TooManyMaterials fallback: no cached resource with this mask had a usable shader map.");
+		}
+		return result;
+	}
+
+	UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL bCompileFallback, UBOOL debugDump)
 	{
 		// FTerrainMaterialResource has no `Material` (UMaterial*) field -- ->Material on one of these
 		// is garbage. Every generic material below the FMaterial interface still works on it, but the
@@ -242,10 +359,19 @@ namespace ShaderClient
 		FString friendlyName;
 		GetFriendlyNameVirtual(fmaterial, &friendlyName);
 
-		auto result = FMaterialCompile_orig(fmaterial, parameterSet, shaderplatform, shaderMap, forceCompile, debugDump);
+		auto result = FMaterialCompile_orig(fmaterial, parameterSet, shaderplatform, shaderMap, forceCompile, bCompileFallback, debugDump);
 		if (result) {
 			// Successfully generated material shader
 			LEASI_INFO(L"Material compiled successfully: {}", friendlyName.Chars());
+			if (isTerrain && shaderMap != nullptr && *shaderMap != nullptr)
+			{
+				const auto& savedExpressions = (*shaderMap)->UniformExpressionSet;
+				LEASI_INFO(L"Terrain shader-map expressions at save: pixel2D={}, pixelCube={}, vertexVector={}, vertexScalar={}",
+					savedExpressions.Uniform2DTextureExpressions.Count(),
+					savedExpressions.UniformCubeTextureExpressions.Count(),
+					savedExpressions.UniformVertexVectorExpressions.Count(),
+					savedExpressions.UniformVertexScalarExpressions.Count());
+			}
 
 			SFXName scName(L"TestShaderCache", 0);
 			auto transient = (*GObjTransientPackage)->Class->GetName();
@@ -256,8 +382,15 @@ namespace ShaderClient
 			shaderCache->MaterialShaderMap.Set((*shaderMap)->StaticParameters, *shaderMap);
 			SaveShaderCache(shaderCache);
 
-			// Send the material binary to ShaderHost
-			SaveMaterialBinary(fmaterial);
+			// Terrain resources have an extension beyond the common FMaterial base. Serialize it
+			// through ATerrain's exact LE3 serializer so ShaderHost can restore the owning Terrain
+			// cache by mask; the ordinary material serializer would silently drop that extension.
+			if (isTerrain) {
+				SaveTerrainMaterialResource(fmaterial);
+			}
+			else {
+				SaveMaterialBinary(fmaterial);
+			}
 		}
 		else if (!CaptureOnly) {
 			LEASI_ERROR(L"Material failed to compile: {}", friendlyName.Chars());
@@ -284,12 +417,23 @@ namespace ShaderClient
 		FString name;
 		GetFriendlyNameVirtual(material, &name);
 		LEASI_INFO(L"Trying to compile material shaders for {}", name.Chars());
+		if (IsTerrainMaterialResource(material) && InUniformExpressionSet != nullptr)
+		{
+			LEASI_INFO(L"Terrain translator expressions: pixel2D={}, pixelCube={}, vertexVector={}, vertexScalar={}",
+				InUniformExpressionSet->Uniform2DTextureExpressions.Count(),
+				InUniformExpressionSet->UniformCubeTextureExpressions.Count(),
+				InUniformExpressionSet->UniformVertexVectorExpressions.Count(),
+				InUniformExpressionSet->UniformVertexScalarExpressions.Count());
+		}
 		UpdateCurrentAction(std::format(L"Compiling {}", name.Chars())); // Use shortname
 
 		std::vector<ShaderCompileCombo> comboList{};
 		GetShaderTypesToCompile(material, comboList);
 
-		// This becomes the Mesh Shader Map
+		// Material shaders and mesh-material shaders live in different lookup tables at runtime.
+		// Keeping the nullptr-VF group in a mesh map makes Parent.Shaders empty, while omitting
+		// VertexFactoryMap leaves mesh shaders unreachable through their factory lookup.
+		std::vector<FShader*> materialShaders{};
 		std::map<FVertexFactoryType*, std::vector<FShader*>> shadersByVF{};
 
 		if (PRINT_DEBUG_INFO) {
@@ -298,7 +442,9 @@ namespace ShaderClient
 		bool compiledSuccessfully = true;
 		for (auto& var : comboList)
 		{
-			std::vector<FShader*>& shaderList = shadersByVF[var.vertexFactoryType];
+			std::vector<FShader*>& shaderList = var.vertexFactoryType != nullptr
+				? shadersByVF[var.vertexFactoryType]
+				: materialShaders;
 			var.name = name;
 			if (PRINT_DEBUG_INFO) {
 				if (var.vertexFactoryType != nullptr) {
@@ -343,19 +489,23 @@ namespace ShaderClient
 			return FALSE;
 		}
 
-		// Build the shader map
+		// Non-mesh shader types are resolved from FMaterialShaderMap's parent FShaderMap.
+		for (auto&& shader : materialShaders) {
+			map->Parent.Shaders.Set(shader->Type, shader);
+		}
+
+		// Mesh shader types are resolved through both the owned map array and the vertex-factory index.
 		for (auto& [type, list] : shadersByVF) {
-			// Access key: it->first
-				// Access value: it->second
 			FMeshMaterialShaderMap* fmmsm = FMeshMaterialShaderMap::Allocate();
 			fmmsm->InitCount = 0;
 			fmmsm->VertexFactoryType = type;
 			for (auto&& shader : list) {
 				// Add the shader to the map
 				fmmsm->Shaders.Set(shader->Type, shader);
-				// Need to do FShader::BeginInit() here.
 			}
 			map->MeshShaderMaps.Add(fmmsm);
+			auto vertexFactoryType = type; // TMap::Set takes its key by mutable reference.
+			map->VertexFactoryMap.Set(vertexFactoryType, fmmsm);
 		}
 
 

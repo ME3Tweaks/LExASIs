@@ -147,7 +147,10 @@ namespace ShaderClient
 
     extern FFileManager** GFileManager;
 
-    using tFMaterialCompile = UBOOL(FMaterial* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL debugDump);
+    // LE3 FMaterial::Compile has three stack boolean arguments after OutShaderMap:
+    // bForceCompile, bCompileFallback, and bDebugDump. Keep this exact ABI; dropping the
+    // fallback argument shifts bDebugDump and leaves the native function reading stale stack data.
+    using tFMaterialCompile = UBOOL(FMaterial* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL bCompileFallback, UBOOL debugDump);
     extern tFMaterialCompile* FMaterialCompile;
     extern tFMaterialCompile* FMaterialCompile_orig;
 
@@ -197,6 +200,12 @@ namespace ShaderClient
     using tSerializeMaterialResource = void(FMaterialResource*, FArchive*);
     extern tSerializeMaterialResource* SerializeMaterialResource; // @ 7ff74ab556a0
 
+    // LE3 11.3.2: the non-member serializer used by ATerrain::Serialize for each cached
+    // FTerrainMaterialResource. Unlike SerializeMaterialResource it includes Terrain, Mask,
+    // MaterialIds and LightingGuid after the FMaterial base slice.
+    using tSerializeTerrainMaterialResource = FArchive* (FArchive*, FMaterialResource*);
+    extern tSerializeTerrainMaterialResource* SerializeTerrainMaterialResource;
+
     using tSerializeFUniformExpressionSet = void(FUniformExpressionSet*, FArchive*);
     extern tSerializeFUniformExpressionSet* SerializeFUniformExpressionSet;
 
@@ -233,9 +242,16 @@ namespace ShaderClient
 	extern tShaderMapIsComplete* FShaderMap_IsComplete_orig;
     UBOOL FShaderMap_IsComplete_hook(void* map, FMaterial* material);
 
+    // ATerrain::GetCachedMaterial selects the mask-specific terrain resource used by a component.
+    // LE3 returns the FTerrainMaterialResource's FMaterialRenderProxy base on success, otherwise
+    // GEngine->TerrainErrorMaterial's proxy (the visible EngineMaterials.TooManyMaterials fallback).
+    using tTerrainGetCachedMaterial = void* (ATerrain* terrain, const void* mask, UBOOL* outIsTerrainResource);
+    extern tTerrainGetCachedMaterial* ATerrain_GetCachedMaterial_orig;
+    void* ATerrain_GetCachedMaterial_hook(ATerrain* terrain, const void* mask, UBOOL* outIsTerrainResource);
+
     // Functions
 
-    UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL debugDump);
+    UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL bCompileFallback, UBOOL debugDump);
     UBOOL InitShaderMap_hook(FMaterial* fmaterial, void* StaticParameters, EShaderPlatform Platform, int Quality);
     FArchiveProxy* PackagelessSerializeObjectRef(FArchiveProxy* Ar, UObject** obj);
     FArchiveProxy GetStringWithObjectWriterProxy(FArchive& inArchive);
