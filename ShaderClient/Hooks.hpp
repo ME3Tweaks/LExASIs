@@ -14,8 +14,8 @@ namespace ShaderClient
     // If true we should boot into shader compiler level on start
     extern bool BootShaderCompilerLevel;
 
-    // Temporary opt-in for validating LE1-authored opaque materials that use SceneDepth in LE3.
-    // This remains deliberately scoped to the material named below; it does not change material data.
+    // Opt-in compatibility mode for legacy opaque materials that use SceneDepth in LE3.
+    // It filters only the known compatibility diagnostic and does not change material data.
     extern bool AllowLegacyOpaqueSceneDepthTest;
 
     using tFGetMaterialFriendlyName = FString* (void* fmaterial, FString* OutStr);

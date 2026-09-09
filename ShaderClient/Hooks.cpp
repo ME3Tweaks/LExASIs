@@ -143,7 +143,8 @@ namespace ShaderClient
 
 		// LE2/LE3 emit this after property compilation but continue generating the HLSL. LE1's
 		// equivalent translator has no such error path. Remove precisely that compatibility
-		// diagnostic; all unrelated errors, including scene-color usage, remain fatal.
+		// diagnostic for any opted-in legacy material; all unrelated errors, including scene-color
+		// usage, remain fatal.
 		static constexpr const wchar_t* LegacyOpaqueSceneDepthError =
 			L"Only transparent materials can read from scene depth.";
 		auto& compileErrors = translator->Material->CompileErrors;
@@ -161,7 +162,7 @@ namespace ShaderClient
 
 		compileErrors.Clear();
 		translator->bSuccess = TRUE;
-		LEASI_WARN(L"Permitting legacy opaque SceneDepth test for {}", materialName.Chars());
+		LEASI_WARN(L"Permitting legacy opaque SceneDepth compatibility diagnostic");
 		return TRUE;
 	}
 
@@ -178,7 +179,9 @@ namespace ShaderClient
 			}
 			return res;
 		}
+		int originalSeekFreeValue = 0;
 		if (GIsSeekFreePCConsole != nullptr) {
+			originalSeekFreeValue = *GIsSeekFreePCConsole;
 			*GIsSeekFreePCConsole = 0; // Tricks game into thinking it can attempt to compile shader
 		}
 		auto result = InitShaderMap_orig(fmaterial, StaticParameters, Platform, Quality);
@@ -194,7 +197,7 @@ namespace ShaderClient
 			auto sm = fmaterial->ShaderMap;
 		}
 		if (GIsSeekFreePCConsole != nullptr) {
-			*GIsSeekFreePCConsole = 1; // Restore this cause all sorts of other stuff will probably break if we don't.
+			*GIsSeekFreePCConsole = originalSeekFreeValue;
 		}
 		return result;
 	}

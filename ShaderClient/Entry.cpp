@@ -73,7 +73,7 @@ namespace ShaderClient
 			SendDebugPackages = true;
 		}
 		if (cli.find(L"-AllowLegacyOpaqueSceneDepthTest") != std::wstring::npos) {
-			LEASI_WARN(L"Enabling the scoped legacy opaque SceneDepth test for LAV70_CAVEWALL02");
+			LEASI_WARN(L"Enabling legacy opaque SceneDepth compatibility mode");
 			AllowLegacyOpaqueSceneDepthTest = true;
 		}
 
