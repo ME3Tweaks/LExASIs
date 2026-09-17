@@ -2,9 +2,12 @@
 #include "ConvoSniffer/Client.hpp"
 #include "ConvoSniffer/Entry.hpp"
 #include "ConvoSniffer/Hooks.hpp"
+#include "Common/ProxyConsoleLease.hpp"
 
 #include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
+#include <memory>
+#include <utility>
+#include <vector>
 
 
 #ifndef SDK_TARGET_LE1
@@ -13,17 +16,22 @@
 #endif
 
 
-SPI_PLUGINSIDE_SUPPORT(L"LE1ConvoSniffer", L"d00telemental", L"0.1.0", SPI_GAME_LE1, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(L"LE1ConvoSniffer", L"d00telemental", L"0.1.1", SPI_GAME_LE1, SPI_VERSION_V4);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
+
+namespace ConvoSniffer
+{
+    std::shared_ptr<spdlog::logger> Logger;
+    std::shared_ptr<spdlog::logger> PreviousDefaultLogger;
+}
 
 
 SPI_IMPLEMENT_ATTACH
 {
     ::LESDK::Initializer Init{ InterfacePtr, "LE1ConvoSniffer" };
-    ::LESDK::InitializeConsole();
 
-    ::ConvoSniffer::InitializeLogger();
+    ::ConvoSniffer::InitializeLogger(Init);
 
     LEASI_INFO("Launching ConvoSniffer ({})...", "LE1");
     LEASI_INFO("-------------------------------");
@@ -41,26 +49,37 @@ SPI_IMPLEMENT_DETACH
 {
     LEASI_UNUSED(InterfacePtr);
     delete std::exchange(::ConvoSniffer::gp_snifferClient, nullptr);
-    ::LESDK::TerminateConsole();
+    if (::ConvoSniffer::PreviousDefaultLogger != nullptr)
+        spdlog::set_default_logger(::ConvoSniffer::PreviousDefaultLogger);
+    spdlog::drop("multi_sink");
+    ::ConvoSniffer::Logger.reset();
+    ::ConvoSniffer::PreviousDefaultLogger.reset();
     return true;
 }
 
 
 namespace ConvoSniffer
 {
-    void InitializeLogger()
+    void InitializeLogger(::LESDK::Initializer& Init)
     {
-        auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console->set_pattern("%^[%H:%M:%S.%e] [%L LE1ConvoSniffer] %v%$");
-        console->set_level(spdlog::level::debug);
+        std::vector<spdlog::sink_ptr> sinks;
+        auto consoleLease = Common::ProxyConsoleLease::Create(Init, "LE1ConvoSniffer");
+        if (auto console = Common::MakeProxyConsoleSink(std::move(consoleLease)); console != nullptr)
+        {
+            console->set_pattern("%^[%H:%M:%S.%e] [%L LE1ConvoSniffer] %v%$");
+            console->set_level(spdlog::level::debug);
+            sinks.push_back(std::move(console));
+        }
 
         auto file = std::make_shared<spdlog::sinks::basic_file_sink_mt>("convosniffer.le1.log", false);
         file->set_pattern("[%H:%M:%S.%e] [%l] %v");
         file->set_level(spdlog::level::trace);
+        sinks.push_back(std::move(file));
 
-        auto logger = new spdlog::logger("multi_sink", { console, file });
-        logger->set_level(spdlog::level::trace);
-        spdlog::set_default_logger(std::shared_ptr<spdlog::logger>(logger));
+        PreviousDefaultLogger = spdlog::default_logger();
+        Logger = std::make_shared<spdlog::logger>("multi_sink", sinks.begin(), sinks.end());
+        Logger->set_level(spdlog::level::trace);
+        spdlog::set_default_logger(Logger);
     }
 
     void InitializeGlobals(::LESDK::Initializer& Init)

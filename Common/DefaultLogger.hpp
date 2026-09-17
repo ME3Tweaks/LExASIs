@@ -1,3 +1,7 @@
+#pragma once
+
+#include <LESDK/Init.hpp>
+
 namespace Common {
 	// Removes the logging pattern so that data written by the LEASI_INFO/WARN/ERROR macros is not prefixed
 	void RemoveLoggingPattern();
@@ -9,6 +13,8 @@ namespace Common {
 	void SetupDefaultLogger(const char* gameName, const char* logBaseName);
 	// Sets up the default logger with console and file sinks and the default logging pattern
 	void SetupDefaultLogger(const char* gameName, const char* logBaseName, bool forceShowConsole);
+	// Same setup, with the SPI context required for broker-backed console output.
+	void SetupDefaultLogger(const char* gameName, const char* logBaseName, bool forceShowConsole, ::LESDK::Initializer& context);
 	// Shuts down the default logger, closing it out and flushing it.
 	void ShutdownLogger();
 }

@@ -1,15 +1,18 @@
 #include <spdlog/details/windows_include.h>
 #include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 #include "Common/Base.hpp"
 #include "LESDK/Headers.hpp"
 #include "Common/DefaultLogger.hpp"
+#include "Common/ProxyConsoleLease.hpp"
 
 namespace Common
 {
 	// Static variables to cache logger parameters
 	static std::string _cachedGameName;
 	static std::string _cachedLogBaseName;
+	static std::shared_ptr<ProxyConsoleLease> _consoleLease;
+
+	static void SetupDefaultLoggerInternal(const char* gameName, const char* logBaseName, bool forceShowConsole, ::LESDK::Initializer* context);
 
 	// Removes the prefix of all logging.
 	void RemoveLoggingPattern() {
@@ -35,24 +38,44 @@ namespace Common
 	}
 
 	void SetupDefaultLogger(const char* gameName, const char* logBaseName, bool forceShowConsole) {
+		SetupDefaultLoggerInternal(gameName, logBaseName, forceShowConsole, nullptr);
+	}
+
+	void SetupDefaultLogger(const char* gameName, const char* logBaseName, bool forceShowConsole, ::LESDK::Initializer& context) {
+		SetupDefaultLoggerInternal(gameName, logBaseName, forceShowConsole, &context);
+	}
+
+	static void SetupDefaultLoggerInternal(const char* gameName, const char* logBaseName, bool forceShowConsole, ::LESDK::Initializer* context) {
 		// Cache parameters for later use by RestoreLoggingPattern()
 		_cachedGameName = gameName;
 		_cachedLogBaseName = logBaseName;
 
 		auto DefaultLogger = spdlog::default_logger();
 		DefaultLogger->sinks().clear();
+		_consoleLease.reset();
 
 #ifdef _DEBUG
 		forceShowConsole = true;
 #endif
 		if (forceShowConsole) {
-			::LESDK::InitializeConsole();
-			auto ConsoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-			ConsoleSink->set_level(spdlog::level::trace);
-			ConsoleSink->set_color(spdlog::level::trace, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-			ConsoleSink->set_color(spdlog::level::debug, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY);
-			ConsoleSink->set_color(spdlog::level::info, FOREGROUND_BLUE | FOREGROUND_INTENSITY);
-			DefaultLogger->sinks().push_back(std::move(ConsoleSink));
+			if (context != nullptr)
+			{
+				_consoleLease = ProxyConsoleLease::Create(*context, logBaseName);
+				if (_consoleLease != nullptr)
+				{
+					auto ConsoleSink = MakeProxyConsoleSink(_consoleLease);
+					ConsoleSink->set_level(spdlog::level::trace);
+					DefaultLogger->sinks().push_back(std::move(ConsoleSink));
+				}
+				else
+				{
+					OutputDebugStringA("Common logger: console output requested but SPI v4 broker setup failed.\n");
+				}
+			}
+			else
+			{
+				OutputDebugStringA("Common logger: console output requested without an SPI initializer.\n");
+			}
 		}
 		try {
 			auto FileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Logs/" + std::string(logBaseName) + ".log", true);
@@ -96,11 +119,14 @@ namespace Common
 	void ShutdownLogger() {
 		// Flush and release file logger
 		try {
-			if (spdlog::default_logger())
+			auto DefaultLogger = spdlog::default_logger();
+			if (DefaultLogger)
 			{
-				spdlog::default_logger()->flush();
-				spdlog::drop(spdlog::default_logger()->name());
+				DefaultLogger->flush();
+				DefaultLogger->sinks().clear();
+				spdlog::drop(DefaultLogger->name());
 			}
+			_consoleLease.reset();
 		}
 		catch (...) {
 			// Do nothing

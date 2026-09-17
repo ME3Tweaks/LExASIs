@@ -1,7 +1,3 @@
-#include <spdlog/details/windows_include.h>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-
 #include "Common/Base.hpp"
 #include "StreamingLevelsHUD/Entry.hpp"
 #include "StreamingLevelsHUD/Hooks.hpp"
@@ -25,9 +21,6 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
 	LEASI_UNUSED(InterfacePtr);
-#ifdef _DEBUG
-	::LESDK::TerminateConsole();
-#endif
 	return true;
 }
 

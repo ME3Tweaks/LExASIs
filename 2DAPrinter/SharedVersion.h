@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"Bio2DAPrinter"
 
 
-#define ASI_VERSION 3
+#define ASI_VERSION 4
 #define ASI_DESCRIPTION "Bio2DA Printer dumps loaded 2DA tables to the log when pressing CTRL + 2."
 
 

@@ -17,6 +17,8 @@ asi_target (Common
     "Mount.hpp"
     "DefaultLogger.hpp"
     "DefaultLogger.cpp"
+    "ProxyConsoleLease.hpp"
+    "ProxyConsoleLease.cpp"
   LINKS
     "spdlog"
   VLINKS
@@ -31,6 +33,8 @@ asi_target (Common
     "Base.hpp"
     "DefaultLogger.hpp"
     "DefaultLogger.cpp"
+    "ProxyConsoleLease.hpp"
+    "ProxyConsoleLease.cpp"
   LINKS
     "spdlog"
   VLINKS

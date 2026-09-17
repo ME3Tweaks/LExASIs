@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"SeqActLogEnabler"
 
 
-#define ASI_VERSION 5
+#define ASI_VERSION 6
 #define ASI_DESCRIPTION "SeqActLog Enabler enables functionality for SeqAct_Log kismet objects. It requires an additional mod to be installed for full functionality."
 
 

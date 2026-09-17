@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"DiscordIntegration"
 
 
-#define ASI_VERSION 1
+#define ASI_VERSION 2
 // String that appears in the file description and part of SPI
 #define ASI_DESCRIPTION "Discord Integration allows the game to interface with Discord to provide rich presence information on your profile about the game."
 

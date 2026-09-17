@@ -8,6 +8,7 @@
 #include <chrono>
 #include <memory>
 #include <spdlog/spdlog.h>
+#include "Common/ProxyConsoleLease.hpp"
 
 namespace Common
 {
@@ -34,6 +35,10 @@ public:
      * @param   filename  file to log to, if OutputToFile is specified
      */
     explicit ME3TweaksLogger(const std::string &logger_name, const LogOutput outputType, const spdlog::filename_t &filename);
+
+    /** Construct with an SPI context for broker-backed console output. */
+    ME3TweaksLogger(const std::string& logger_name, LogOutput outputType, const spdlog::filename_t& filename,
+        ::LESDK::Initializer& context, const char* ownerName);
 
     /**
      * @brief   Get the underlying spdlog logger
@@ -157,6 +162,9 @@ public:
     }
 
 private:
+    ME3TweaksLogger(const std::string& logger_name, LogOutput outputType, const spdlog::filename_t& filename,
+        ::LESDK::Initializer* context, const char* ownerName);
+
     // ! Helper functions to eliminate code duplication
     // ========================================
 
@@ -199,6 +207,7 @@ private:
         }
     }
 
+    std::shared_ptr<ProxyConsoleLease> m_consoleLease;
     std::shared_ptr<spdlog::logger> m_logger;
     std::chrono::steady_clock::time_point m_startTime;
 };

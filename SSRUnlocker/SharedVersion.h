@@ -13,7 +13,7 @@
 #define ASI_NAME_NO_SPACE_A "SSRUnlocker"
 #define ASI_NAME_NO_SPACE_W L"SSRUnlocker"
 
-#define ASI_VERSION 1
+#define ASI_VERSION 2
 #define ASI_DESCRIPTION "SSR Unlocker makes realtime reflections in the game match the framerate, making them appear less choppy."
 
 

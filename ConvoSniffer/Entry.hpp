@@ -7,7 +7,7 @@
 
 namespace ConvoSniffer
 {
-    void InitializeLogger();
+    void InitializeLogger(::LESDK::Initializer& Init);
     void InitializeGlobals(::LESDK::Initializer& Init);
     void InitializeHooks(::LESDK::Initializer& Init);
 

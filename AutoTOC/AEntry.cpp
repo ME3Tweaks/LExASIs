@@ -41,16 +41,18 @@ chrono::time_point<chrono::steady_clock> startTime;
 #define LOG_DURATION(desc)
 #endif
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_V4);
 SPI_PLUGINSIDE_PRELOAD;
 SPI_PLUGINSIDE_ASYNCATTACH; // Should this be ASYNCATTACH instead?
 
 
 SPI_IMPLEMENT_ATTACH
 {
-	LEASI_UNUSED(InterfacePtr);
 #ifdef LOGGING
-	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A);
+	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
+	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A, false, Init);
+#else
+	LEASI_UNUSED(InterfacePtr);
 #endif
 	TCHAR path[MAX_PATH];
 	HMODULE hModule = GetModuleHandle(NULL);
@@ -63,7 +65,7 @@ SPI_IMPLEMENT_DETACH
 {
 	LEASI_UNUSED(InterfacePtr);
 #ifdef LOGGING
-	LESDK::TerminateConsole();
+	Common::ShutdownLogger();
 #endif
 	return true;
 }

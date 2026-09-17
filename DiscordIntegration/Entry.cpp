@@ -7,7 +7,7 @@
 #include "DiscordIntegration/SharedVersion.h"
 
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_V4);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -15,7 +15,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 SPI_IMPLEMENT_ATTACH
 {
 	::DiscordIntegration::HookManager = new ::LESDK::Initializer{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
-	::Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A);
+	::Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A, false, *::DiscordIntegration::HookManager);
 
 	::DiscordIntegration::InitializeGlobals();
 	::DiscordIntegration::InitializeHooks();

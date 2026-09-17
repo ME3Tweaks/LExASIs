@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"FunctionLogger"
 
 
-#define ASI_VERSION 4
+#define ASI_VERSION 5
 // String that appears in the file description and part of SPI
 #define ASI_DESCRIPTION "Function Logger logs all calls from the UnrealScript VM to both Unreal and Native calls."
 

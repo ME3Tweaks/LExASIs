@@ -4,7 +4,7 @@
 #include "FunctionLogger/Hooks.hpp"
 #include "FunctionLogger/SharedVersion.h"
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_V4);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -17,11 +17,10 @@ SPI_IMPLEMENT_ATTACH
 	auto outputType = Common::ME3TweaksLogger::LogOutput::OutputToFile;
 	if (nullptr != std::wcsstr(GetCommandLineW(), L" -functionlogtoconsole")) {
 		outputType = Common::ME3TweaksLogger::LogOutput(outputType | Common::ME3TweaksLogger::LogOutput::OutputToConsole);
-		::LESDK::InitializeConsole();
 	}
 	try
 	{
-		::FunctionLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".log");
+		::FunctionLogger::FileLogger = std::make_unique<Common::ME3TweaksLogger>(ASI_NAME_NO_SPACE_A, outputType, ASI_NAME_NO_SPACE_A ".log", Init, ASI_NAME_NO_SPACE_A);
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
@@ -51,8 +50,6 @@ SPI_IMPLEMENT_DETACH
 	catch (...) {
 		// Do nothing
 	}
-
-	::LESDK::TerminateConsole();
 	return true;
 }
 

@@ -13,7 +13,7 @@
 #define ASI_NAME_NO_SPACE_A "AutoTOC"
 #define ASI_NAME_NO_SPACE_W L"AutoTOC"
 
-#define ASI_VERSION 3
+#define ASI_VERSION 4
 #define ASI_DESCRIPTION "AutoTOC automatically generates Table of Contents files for Mass Effect games."
 
 

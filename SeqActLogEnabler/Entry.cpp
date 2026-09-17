@@ -6,7 +6,7 @@
 
 constexpr auto loggerName = "SeqActLogEnabler";
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_V4);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -15,9 +15,6 @@ SPI_IMPLEMENT_ATTACH
 {
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
 	// Initialize console and file logger
-#ifdef _DEBUG
-	::LESDK::InitializeConsole();
-#endif
 
 	::SeqActLogEnabler::InitializeGlobals(Init);
 	::SeqActLogEnabler::InitializeHooks(Init);
@@ -30,7 +27,7 @@ SPI_IMPLEMENT_ATTACH
 	);
 	try
 	{
-		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, ASI_NAME_NO_SPACE_A ".log");
+		::SeqActLogEnabler::FileLogger = std::make_unique<Common::ME3TweaksLogger>(loggerName, outputType, ASI_NAME_NO_SPACE_A ".log", Init, ASI_NAME_NO_SPACE_A);
 	}
 	catch (const spdlog::spdlog_ex& ex)
 	{
@@ -65,7 +62,6 @@ SPI_IMPLEMENT_DETACH
 		LEASI_UNUSED(code);
 	}
 
-	::LESDK::TerminateConsole();
 	return true;
 }
 
