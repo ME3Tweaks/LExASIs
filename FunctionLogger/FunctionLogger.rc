@@ -37,3 +37,15 @@ BEGIN
         VALUE "Translation", 0x409, 1200
     END
 END
+
+// Command-line switches this ASI responds to, embedded so an external
+// installer/updater can discover them without loading this DLL as code.
+// Read this resource with LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+// never LoadLibrary, since the DLL's game-specific dependencies may not be resolvable
+// in the reading process.
+ME3TWEAKS_CMDLINE_ARGS RCDATA
+BEGIN
+    "{""schemaVersion"":1,""commands"":["
+    "{""name"":""-functionlogtoconsole"",""description"":""Also mirrors UObject::ProcessEvent/ProcessInternal function log output to the console, in addition to FunctionLog.log.""}"
+    "]}"
+END
