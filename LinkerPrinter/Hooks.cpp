@@ -47,12 +47,21 @@ namespace LinkerPrinter
 	// ! UObject::ProcessEvent hook
 	// ========================================
 
+	bool IsChildOf(UClass* cls, const UClass* base)
+	{
+		for (const UField* Struct = cls; Struct; Struct = Struct->SuperField)
+			if (Struct == base)
+				return true;
+		return false;
+	}
+
 	t_UObject_ProcessEvent* UObject_ProcessEvent_orig = nullptr;
 
 	void UObject_ProcessEvent_hook(UObject* Context, UFunction* Function, void* Parms, void* Result)
 	{
 		// This goes before key reading as order of execution matters for next frame calc
-		if (CanPrint && Function->GetFullName().Equals(L"Function SFXGame.BioHUD.PostRender")) {
+		if (CanPrint && Function->GetName() == L"PostRender" && Function->Outer != nullptr && (IsChildOf(static_cast<UClass*>(Function->Outer), ABioHUD::StaticClass()) == true))
+		{
 			auto postRenderParams = static_cast<ABioHUD*>(Context);
 			DrawDirectionsText(postRenderParams->Canvas);
 		}
