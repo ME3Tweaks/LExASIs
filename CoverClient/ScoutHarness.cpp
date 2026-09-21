@@ -3,6 +3,10 @@
 #include "CoverClient/Utilities/PathUtilities.hpp"
 #include "CoverClient/Utilities/DebugTools.hpp"
 #include "CoverClient/CoverEdges.hpp"
+#include "CoverClient/NavRuntime.hpp"
+#include "CoverClient/FloorSampler.hpp"
+#include "CoverClient/PathNodes.hpp"
+#include "CoverClient/FireLinks.hpp"
 #include "Common/Base.hpp"
 #include "Common/Objects.hpp"
 
@@ -429,34 +433,8 @@ namespace CoverClient
 			// reaches it with no scout would fault rather than skip.
 			link->GLOBAL_bUseSlotMarkers = 1;
 
-			struct ScopedSpawnable
-			{
-				explicit ScopedSpawnable(UClass* cls)
-				{
-					if (cls == nullptr) { return; }
-					defaults = static_cast<ANavigationPoint*>(cls->ClassDefaultObject);
-					if (defaults == nullptr) { return; }
-					savedStatic = defaults->bStatic;
-					savedNoDelete = defaults->bNoDelete;
-					defaults->bStatic = 0;
-					defaults->bNoDelete = 0;
-				}
-				~ScopedSpawnable()
-				{
-					if (defaults == nullptr) { return; }
-					defaults->bStatic = savedStatic;
-					defaults->bNoDelete = savedNoDelete;
-				}
-				ScopedSpawnable(ScopedSpawnable const&) = delete;
-				ScopedSpawnable& operator=(ScopedSpawnable const&) = delete;
-
-				ANavigationPoint* defaults{ nullptr };
-				unsigned long savedStatic{ 0 };
-				unsigned long savedNoDelete{ 0 };
-			};
-
-			ScopedSpawnable slotMarkers{ ACoverSlotMarker::StaticClass() };
-			ScopedSpawnable mantleMarkers{ AMantleMarker::StaticClass() };
+			ScopedSpawnableNav slotMarkers{ ACoverSlotMarker::StaticClass() };
+			ScopedSpawnableNav mantleMarkers{ AMantleMarker::StaticClass() };
 
 			using tAddMyMarker = int(ACoverLink*, AActor*);
 			auto* const vtable = *reinterpret_cast<void***>(link);
@@ -908,128 +886,6 @@ namespace CoverClient
 			return false;
 		}
 
-		// ! Runtime ReachSpec construction
-		// ========================================
-		//
-		// CoverSlotMarkers are joined to each other left-to-right by USlotToSlotReachSpecs.
-		// Nothing in the shipping exe builds them: FPathBuilder retains only GetScout and
-		// DestroyScout, and the only spec code left on ACoverSlotMarker is GetReachSpecClass
-		// (which picks a class) and CanPrunePath (which protects one). A level-loaded marker
-		// has its PathList because the specs were serialised, which is why the CoverHost
-		// round-trip works and a live-spawned link does not.
-		//
-		// So we construct them. StaticConstructObject is already resolved for this ASI, and
-		// LESDK's TArray grows through the game's own GMalloc, so PathList can be appended to
-		// directly.
-
-		/// UE3 EReachSpecFlags. A slot-to-slot move is a walk.
-		constexpr int k_reachFlagWalk = 1;
-
-		/// The pawn size a spec is built for. ABioScout::CanDoMove looks up "Human" and falls
-		/// back to PathSizes(0); retail Default__BioScout ships Common/Large/VeryLarge/Max/
-		/// Vehicle and no "Human", so entry 0 is what the cover analysis actually used and it
-		/// is what these specs should be sized for too.
-		bool GetScoutPathSize(AScout* scout, float& outRadius, float& outHeight)
-		{
-			if (scout == nullptr || scout->PathSizes.Count() == 0)
-			{
-				return false;
-			}
-			for (int i = 0; i < static_cast<int>(scout->PathSizes.Count()); i++)
-			{
-				const char* const desc = scout->PathSizes(i).Desc.GetName();
-				if (desc != nullptr && _stricmp(desc, "Human") == 0)
-				{
-					outRadius = scout->PathSizes(i).Radius;
-					outHeight = scout->PathSizes(i).Height;
-					return true;
-				}
-			}
-			outRadius = scout->PathSizes(0).Radius;
-			outHeight = scout->PathSizes(0).Height;
-			return true;
-		}
-
-		/// Creates one directed spec and appends it to Start's PathList.
-		///
-		/// @returns The spec, or nullptr if it could not be constructed.
-		UReachSpec* CreateSpec(ANavigationPoint* start, ANavigationPoint* end,
-			float radius, float height, int reachFlags)
-		{
-			if (start == nullptr || end == nullptr || start == end)
-			{
-				return nullptr;
-			}
-
-			// ReachSpecs are outered to the level, the same as the nav points they join.
-			auto* const spec = StaticConstructObject<USlotToSlotReachSpec>(
-				start->Outer, SFXName{}, static_cast<EObjectFlags>(0));
-			if (spec == nullptr)
-			{
-				return nullptr;
-			}
-
-			const FVector a = start->LOCATION;
-			const FVector b = end->LOCATION;
-			const FVector delta{ b.X - a.X, b.Y - a.Y, b.Z - a.Z };
-			const float distance = std::sqrt(
-				delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z);
-
-			spec->Start = start;
-			spec->End.Actor = end;
-			spec->End.Guid = FGuid{};
-			spec->Direction = (distance > 0.001f)
-				? FVector{ delta.X / distance, delta.Y / distance, delta.Z / distance }
-				: FVector{};
-			spec->Distance = static_cast<int>(distance);
-			spec->CollisionRadius = static_cast<int>(radius);
-			spec->CollisionHeight = static_cast<int>(height);
-			spec->reachFlags = reachFlags;
-
-			// Every shipped spec measured on BioD_CerMir_125Land has this set, and
-			// ANavigationPoint::AddToNavigationOctree walks PathList and registers them along
-			// with the marker -- so they do get added, and this is not the dead flag it looked
-			// like before there was a shipped spec to read.
-			spec->bAddToNavigationOctree = 1;
-
-			start->PathList.Add(spec);
-			return spec;
-		}
-
-		// ! Navigation octree registration
-		// ========================================
-		//
-		// This is the gate. BioPlayerController::FindPlayerCover (0x7FF74B416F30) finds cover by
-		// running NavigationOctreeRadiusCheck around the pawn and keeping every hit whose
-		// FNavigationOctreeObject::OwnerType has bit 0x04 -- CoverSlotMarker. A marker that is
-		// not in the octree is invisible to the player's cover search no matter how correct
-		// everything else is, which is exactly what we measured: OctreeNode NULL, OwnerType
-		// 0x00, and GetAllNavInRadius returning nothing at all.
-		//
-		// ANavigationPoint::AddToNavigationOctree survived as vtable slot 265
-		// (0x7FF74AE88C20). It:
-		//   - early-outs unless CylinderComponent (+0x314) is set and OctreeNode (+0x270) is null
-		//   - FNavigationOctreeObject::SetOwner  -> Owner = this, OwnerType = 1 | 4 for a marker
-		//   - SetBox from the cylinder's CollisionRadius/CollisionHeight around Location
-		//   - FNavigationOctree::AddObject
-		//   - then adds every ReachSpec in PathList
-		//
-		// That last step is why this has to run AFTER the spec pass, not before.
-		constexpr size_t k_vtableIndexAddToNavigationOctree = 265;
-
-		void CallAddToNavigationOctree(ANavigationPoint* point)
-		{
-			if (point == nullptr)
-			{
-				return;
-			}
-			using tAddToNavigationOctree = void(ANavigationPoint*);
-			auto* const vtable = *reinterpret_cast<void***>(point);
-			auto* const fn = reinterpret_cast<tAddToNavigationOctree*>(
-				vtable[k_vtableIndexAddToNavigationOctree]);
-			fn(point);
-		}
-
 		/// Result of one link's octree pass.
 		struct OctreeResult
 		{
@@ -1135,7 +991,8 @@ namespace CoverClient
 					continue;
 				}
 
-				if (CreateSpec(a, b, radius, height, k_reachFlagWalk) != nullptr)
+				if (CreateSpec(USlotToSlotReachSpec::StaticClass(), a, b,
+					radius, height, k_reachFlagWalk) != nullptr)
 				{
 					result.created++;
 				}
@@ -1144,7 +1001,8 @@ namespace CoverClient
 					result.failed++;
 				}
 
-				if (CreateSpec(b, a, radius, height, k_reachFlagWalk) != nullptr)
+				if (CreateSpec(USlotToSlotReachSpec::StaticClass(), b, a,
+					radius, height, k_reachFlagWalk) != nullptr)
 				{
 					result.created++;
 				}
@@ -1156,26 +1014,6 @@ namespace CoverClient
 			return result;
 		}
 
-		/// ANavigationPoint::RemoveFromNavigationOctree, vtable slot 266 (0x7FF74AE90EF0). Takes
-		/// the marker and every ReachSpec on its PathList back out of the octree.
-		/// ANavigationPoint::PostScriptDestroyed calls this itself, so destroying a marker
-		/// cleans up after itself -- this is only needed when we tear down a live one.
-		constexpr size_t k_vtableIndexRemoveFromNavigationOctree = 266;
-
-		void CallRemoveFromNavigationOctree(ANavigationPoint* point)
-		{
-			if (point == nullptr)
-			{
-				return;
-			}
-			using tRemove = void(ANavigationPoint*);
-			auto* const vtable = *reinterpret_cast<void***>(point);
-			auto* const fn = reinterpret_cast<tRemove*>(
-				vtable[k_vtableIndexRemoveFromNavigationOctree]);
-			fn(point);
-		}
-
-		/// Empties every marker's PathList so the pass can be re-run. The specs themselves are
 		/// left to garbage collection -- they are UObjects, not actors, and nothing else refers
 		/// to them once the list is cleared.
 		///
@@ -1786,34 +1624,10 @@ namespace CoverClient
 		/// How often a long sweep says it is still alive.
 		constexpr int k_sweepProgressEvery = 100;
 
-		struct FloorSample
-		{
-			/// At walk height, i.e. rideHeight above floorZ.
-			FVector location{};
-			float   floorZ{ 0.0f };
-		};
-
-		/// Quantised sample position. The Z component is what stops the two floors of a
-		/// multi-level room merging into one -- the existing path-node flood fill snaps to a
-		/// world-aligned grid without one, which is note 04's Phase 3 complaint.
-		struct SampleKey
-		{
-			int x{ 0 }, y{ 0 }, z{ 0 };
-
-			bool operator<(const SampleKey& other) const
-			{
-				if (x != other.x) { return x < other.x; }
-				if (y != other.y) { return y < other.y; }
-				return z < other.z;
-			}
-		};
-
 		struct SweepStats
 		{
-			int samples{ 0 };
-			int sampleBudgetHit{ 0 };
-			int neighboursNoFloor{ 0 };
-			int neighboursBlocked{ 0 };
+			/// Where the sweep could stand, from the shared floor sampler.
+			FloorSampleStats floor{};
 
 			int raysFired{ 0 };
 			int rayMissed{ 0 };
@@ -2036,113 +1850,6 @@ namespace CoverClient
 			}
 			return nullptr;
 		}
-
-		/// Enumerates the places a player could stand within `radius` of `origin`, by walking
-		/// the floor rather than by snapping a grid over the world.
-		///
-		/// The neighbour test is two traces and both matter. The floor has to be there, AND
-		/// the straight line from here to there has to be clear -- without the second the fill
-		/// leaks through walls, out of the play space, and seeds cover on the far side of the
-		/// level. This is the same "where can you stand" question Phase 3's path-node network
-		/// asks, and it wants this answer rather than its current 280u world-aligned grid.
-		std::vector<FloorSample> SampleFloor(AActor* tracer, const FVector& origin,
-			float radius, float spacing, float rideHeight, float maxRise, float maxDrop,
-			int maxSamples, SweepStats& stats)
-		{
-			std::vector<FloorSample> samples{};
-
-			float originFloorZ = 0.0f;
-			if (ProbeFloor(tracer, origin, maxRise, maxDrop, originFloorZ) != FloorProbe::Found)
-			{
-				return samples;
-			}
-
-			std::set<SampleKey> visited{};
-			const auto keyOf = [spacing](const FVector& v)
-			{
-				return SampleKey{
-					static_cast<int>(std::round(v.X / spacing)),
-					static_cast<int>(std::round(v.Y / spacing)),
-					// Two walkable surfaces closer together than a slope step is are the same
-					// surface; anything further apart is a different storey.
-					static_cast<int>(std::round(v.Z / 72.0f))
-				};
-			};
-
-			FloorSample start{};
-			start.floorZ = originFloorZ;
-			start.location = { origin.X, origin.Y, originFloorZ + rideHeight };
-			visited.insert(keyOf(start.location));
-			samples.push_back(start);
-
-			// Breadth-first, so the budget is spent on the ground nearest the player rather
-			// than on one long tendril off into a corridor.
-			for (size_t head = 0; head < samples.size(); head++)
-			{
-				if (static_cast<int>(samples.size()) >= maxSamples)
-				{
-					stats.sampleBudgetHit = 1;
-					break;
-				}
-
-				const FloorSample current = samples[head];
-
-				for (int dy = -1; dy <= 1; dy++)
-				{
-					for (int dx = -1; dx <= 1; dx++)
-					{
-						if (dx == 0 && dy == 0) { continue; }
-						if (static_cast<int>(samples.size()) >= maxSamples) { break; }
-
-						const FVector flat{
-							current.location.X + static_cast<float>(dx) * spacing,
-							current.location.Y + static_cast<float>(dy) * spacing,
-							current.location.Z
-						};
-
-						const float rx = flat.X - origin.X;
-						const float ry = flat.Y - origin.Y;
-						if (rx * rx + ry * ry > radius * radius) { continue; }
-
-						// Probe from maxRise above the floor we are standing on, not from the
-						// walk line -- see ProbeFloor. A surface higher than that comes back
-						// Blocked, which is correct: it is a wall, not a step.
-						float nextFloorZ = 0.0f;
-						const FloorProbe probe = ProbeFloor(tracer, flat,
-							(current.floorZ + maxRise) - flat.Z, maxDrop + rideHeight,
-							nextFloorZ);
-						if (probe != FloorProbe::Found)
-						{
-							stats.neighboursNoFloor++;
-							continue;
-						}
-
-						const FVector next{ flat.X, flat.Y, nextFloorZ + rideHeight };
-						const SampleKey key = keyOf(next);
-						if (visited.find(key) != visited.end()) { continue; }
-
-						FVector hitLocation{}, hitNormal{};
-						auto* const blocker = tracer->Trace(next, current.location,
-							FALSE /*bTraceActors*/, FVector{ 1.0f, 1.0f, 1.0f },
-							0, &hitLocation, &hitNormal, nullptr);
-						if (blocker != nullptr)
-						{
-							stats.neighboursBlocked++;
-							continue;
-						}
-
-						visited.insert(key);
-						FloorSample sample{};
-						sample.floorZ = nextFloorZ;
-						sample.location = next;
-						samples.push_back(sample);
-					}
-				}
-			}
-
-			stats.samples = static_cast<int>(samples.size());
-			return samples;
-		}
 	}
 
 	void CmdSweep(float radius, int maxSamples, int maxLinks)
@@ -2231,8 +1938,18 @@ namespace CoverClient
 		}
 
 		SweepStats stats{};
-		const auto samples = SampleFloor(tracer, playerLoc, radius, spacing, rideHeight,
-			maxRise, maxDrop, maxSamples, stats);
+		// Pinned by default while runs are being compared -- see FloorSampler.hpp. The player
+		// can still walk anywhere; only the fill's ORIGIN is held still.
+		const FVector seed = FloorSeedOr(playerLoc);
+		if (HasFloorSeed())
+		{
+			LEASI_INFO("Seeding from the PINNED origin ({:.0f}, {:.0f}, {:.0f}), not from you "
+				"({:.0f}, {:.0f}, {:.0f}). 'cc.seed player' uses your position instead.",
+				seed.X, seed.Y, seed.Z, playerLoc.X, playerLoc.Y, playerLoc.Z);
+		}
+
+		const auto samples = SampleFloor(tracer, seed, radius, spacing, rideHeight,
+			maxRise, maxDrop, maxSamples, stats.floor);
 		if (samples.empty())
 		{
 			LEASI_ERROR("No floor under the player, so there is nothing to sample from.");
@@ -2241,9 +1958,9 @@ namespace CoverClient
 
 		LEASI_INFO("Floor sampling: {} standable point(s){}. Rejected {} neighbour(s) with no "
 			"floor and {} with no clear line to them.",
-			stats.samples,
-			stats.sampleBudgetHit != 0 ? " (SAMPLE BUDGET HIT -- sweep is truncated)" : "",
-			stats.neighboursNoFloor, stats.neighboursBlocked);
+			stats.floor.samples,
+			stats.floor.sampleBudgetHit != 0 ? " (SAMPLE BUDGET HIT -- sweep is truncated)" : "",
+			stats.floor.neighboursNoFloor, stats.floor.neighboursBlocked);
 
 		// Snapshot what already covers something, once, instead of re-deriving it per ray.
 		// Shipped cover never moves, and our own links only ever get added to below.
@@ -2276,7 +1993,7 @@ namespace CoverClient
 			if ((++sampleIndex % k_sweepProgressEvery) == 0)
 			{
 				LEASI_INFO("  ... {} / {} samples, {} link(s) so far.",
-					sampleIndex, stats.samples, stats.linksSpawned);
+					sampleIndex, stats.floor.samples, stats.linksSpawned);
 			}
 
 			// Fire the fan AT MidHeight. That is the height test as well as the search:
@@ -2535,7 +2252,7 @@ namespace CoverClient
 
 		LEASI_INFO("--- sweep result ---");
 		LEASI_INFO("{} link(s), {} slot(s) from {} sample(s) and {} ray(s).",
-			stats.linksSpawned, stats.slotsTotal, stats.samples, stats.raysFired);
+			stats.linksSpawned, stats.slotsTotal, stats.floor.samples, stats.raysFired);
 		LEASI_INFO("Rays: {} hit nothing, {} hit a floor or ceiling, {} had no floor under the "
 			"cover, {} were cover for a different storey, {} landed where we had already "
 			"seeded, {} on cover we had already made, {} on cover the level shipped with.",
@@ -2665,7 +2382,7 @@ namespace CoverClient
 				"argument (cc.sweep <radius> <maxSamples> <maxLinks>) -- but every link costs "
 				"a full per-slot AutoAdjustSlot pass in this one frame.", maxLinks);
 		}
-		if (stats.sampleBudgetHit != 0)
+		if (stats.floor.sampleBudgetHit != 0)
 		{
 			LEASI_WARN("Stopped at the {}-sample budget, so the far side of the radius was "
 				"never looked at. Raise it with cc.sweep <radius> <maxSamples>, or sweep from "
@@ -2876,6 +2593,16 @@ namespace CoverClient
 		{
 			LEASI_INFO("Nothing to remove.");
 			return;
+		}
+
+		// cc.pathnodes joins the path network to these markers in both directions, and
+		// nothing in the engine removes an INCOMING spec when a nav point is destroyed. Left
+		// alone, every path node that reached this cover keeps a dangling End.Actor that the
+		// octree is still indexing.
+		if (const int dropped = DropPathNodeSpecsToCover(); dropped > 0)
+		{
+			LEASI_INFO("Dropped {} spec(s) that reached this cover from the path network. "
+				"Re-run cc.pathnodes after rebuilding cover to join them up again.", dropped);
 		}
 
 		auto* const wi = GetWorldInfo();
@@ -3300,17 +3027,47 @@ namespace CoverClient
 
 	namespace
 	{
-		/// Longest slip to create. Shipped maximum is 1507u; this is that rounded up.
-		constexpr float k_maxSlipDistance = 1536.0f;
-		/// Slip ReachSpecs use the shipped slot-to-slot size, the same as the within-link
-		/// chain -- a slip is the same kind of move, it just crosses a link boundary.
-		constexpr float k_slipSpecRadius = 40.0f;
-		constexpr float k_slipSpecHeight = 95.0f;
+		// ! How long a cover slip actually is
+		//
+		// **1536 was wrong by an order of magnitude, and the note it came from was wrong too.**
+		// The earlier reading of "shipped slips run 95u to 1507u" did not measure slip specs.
+		// The real `CoverSlipReachSpec.Distance` values, read straight out of two shipped
+		// levels:
+		//
+		//     BioD_CerMir_125Land          all 46:   95 - 143
+		//     BioD_Cat003_550BalconyCombat 128/130:  93 - 155, mean 114, NONE over 200
+		//
+		// A cover slip is a short dodge from one cover edge to the adjacent one -- about one
+		// pawn-width of movement -- not a route across the room. At 1536 the pass was free to
+		// connect an edge slot to cover 1500u away facing any direction at all, which is
+		// exactly what Mgamerz saw: "a connection to cover that is facing a different
+		// direction... I don't know what this link is doing."
+		//
+		// 192 sits comfortably above the shipped 155 maximum without inviting another room
+		// crossing. Note that this also makes a facing test unnecessary: at this range the
+		// only cover a slip can reach IS the adjacent cover, and adjacent cover at a corner
+		// legitimately faces a different way.
+		constexpr float k_maxSlipDistance = 192.0f;
+		/// Slip ReachSpecs are 34 x 90, NOT the 40 x 95 the within-link chain uses.
+		///
+		/// Read off a shipped marker's PathList (CoverSlotMarker_3015 in CerMir): its
+		/// SlotToSlot and plain ReachSpecs are 40 x 95, while its CoverSlipReachSpec,
+		/// CoverTurnReachSpec and MantleReachSpec are all 34 x 90. The assumption written here
+		/// -- "a slip is the same kind of move as the chain" -- was reasonable and wrong: the
+		/// moves that leave the wall are sized for the pawn, and only the chain along the wall
+		/// carries the wider label.
+		constexpr float k_slipSpecRadius = 34.0f;
+		constexpr float k_slipSpecHeight = 90.0f;
 
-		/// Shortest slip worth making. Shipped slips bottom out at 95u, but a genuine inside
-		/// corner puts two edge slots ~32u apart and that one is wanted -- so this is set
+		/// Shortest slip worth making. Shipped slips bottom out at 93u, but a genuine inside
+		/// corner puts two edge slots ~32u apart and that one was wanted -- so this is set
 		/// only high enough to drop the degenerate case, two links whose edge slots are
 		/// effectively in the same place. The first run produced slips as short as 3u.
+		///
+		/// Left at 16 deliberately. The corner this was lowered for is now handled INSIDE a
+		/// single link by the drop-branch fix, so the reason has expired and raising it to the
+		/// shipped 93 would be defensible -- but it is a separate change from the maximum, and
+		/// the maximum is the one that produced a visible defect.
 		constexpr float k_minSlipDistance = 16.0f;
 		/// Most a slip may rise or fall. Shipped maximum is 69u.
 		constexpr float k_maxSlipRise = 96.0f;
@@ -3671,7 +3428,7 @@ namespace CoverClient
 			// like every ReachSpec: the opposite edge builds its own on its own pass, which
 			// is what makes the pair bidirectional.
 			if (from.marker != nullptr
-				&& CreateSpec(from.marker, best->marker,
+				&& CreateSpec(USlotToSlotReachSpec::StaticClass(), from.marker, best->marker,
 					k_slipSpecRadius, k_slipSpecHeight, k_reachFlagWalk) != nullptr)
 			{
 				specsCreated++;
@@ -3688,7 +3445,9 @@ namespace CoverClient
 
 		if (created > 0)
 		{
-			LEASI_INFO("Slips: {} created from {} edge slot(s), {:.0f}u to {:.0f}u.",
+			LEASI_INFO("Slips: {} created from {} edge slot(s), {:.0f}u to {:.0f}u. Shipped "
+				"levels run 93u to 155u (mean 114) -- a slip is a dodge to the adjacent cover, "
+				"not a route across the room.",
 				created, static_cast<int>(edges.size()), shortest, longest);
 		}
 		else
@@ -3809,6 +3568,71 @@ namespace CoverClient
 		{
 			LEASI_INFO("Spliced {} link(s) onto WorldInfo.CoverList.", splicedNow);
 		}
+
+		// ! Fill in Slot.Actions on the LIVE slots
+		//
+		// A trooper spawned on the finished network moves along the path nodes and never takes
+		// cover -- it sits in MovingToGoal. A cover slot with an empty `Actions` array offers
+		// no way to shoot from it, so to the AI every slot we generate is a place with no
+		// tactical value whatsoever.
+		//
+		// The array is empty because **LE3 stripped `GetFireActions`** (note 02), so nothing in
+		// the shipping binary fills it -- BuildSlotInfo runs and leaves it alone. The 32768u
+		// sweep measured this exactly: 1826 of 1826 slots with none.
+		//
+		// CoverExport already derives this, but only into the CLIENT model on its way to the
+		// host. The live FCoverSlot the AI actually reads was never touched, so the fix had
+		// been written once and applied in the one place that could not help the game.
+		//
+		// Derivation is UE3's own (UnCover.cpp:2066): bLeanLeft -> CA_LeanLeft,
+		// bLeanRight -> CA_LeanRight, bCanPopUp -> CA_PopUp. CA_Default is deliberately absent:
+		// it belongs to the DESTINATION list in a fire link, not to the source.
+		{
+			constexpr unsigned char k_caLeanLeft = 3;
+			constexpr unsigned char k_caLeanRight = 4;
+			constexpr unsigned char k_caPopUp = 5;
+
+			int filled = 0, alreadyHad = 0, stillEmpty = 0;
+			for (auto* const link : g_SpawnedLinks)
+			{
+				if (link == nullptr || ::Common::IsDestroyed(link)) { continue; }
+				const int slots = static_cast<int>(link->Slots.Count());
+				for (int i = 0; i < slots; i++)
+				{
+					FCoverSlot& slot = link->Slots(i);
+					if (slot.bEnabled == 0) { continue; }
+					if (slot.Actions.Count() > 0) { alreadyHad++; continue; }
+
+					if (slot.bLeanLeft != 0)  { slot.Actions.Add(k_caLeanLeft); }
+					if (slot.bLeanRight != 0) { slot.Actions.Add(k_caLeanRight); }
+					if (slot.bCanPopUp != 0)  { slot.Actions.Add(k_caPopUp); }
+
+					if (slot.Actions.Count() > 0) { filled++; } else { stillEmpty++; }
+				}
+			}
+			LEASI_INFO("--- filling Slot.Actions ---");
+			LEASI_INFO("Actions: {} slot(s) filled from their lean/popup flags, {} already had "
+				"some. LE3 stripped GetFireActions, so nothing else ever writes this.",
+				filled, alreadyHad);
+			if (stillEmpty > 0)
+			{
+				LEASI_WARN("{} enabled slot(s) still have no action: no lean either way and no "
+					"pop-up, so they genuinely cannot be fired from. A few is normal; many "
+					"would be a BuildSlotInfo problem rather than an Actions one.", stillEmpty);
+			}
+		}
+
+		// Fire links depend on the Actions list just filled in above, so they run here rather
+		// than with the rest of the geometry passes. See FireLinks.hpp: an empty FireLinks array
+		// is what makes Goal_AtCover::RateSlotMarker throw a slot away before it is ever rated.
+		BuildFireLinksOnSpawnedLinks();
+
+		// Exposed and danger cover are filled from the same geometry, and shipped data fills
+		// them on 99% and 90% of slots respectively -- more consistently than FireLinks. The
+		// scalar defaults go last so ForceCoverType picks up the settled CoverType.
+		BuildExposedCoverOnSpawnedLinks();
+		BuildDangerCoverOnSpawnedLinks();
+		ApplyShippedSlotDefaults();
 
 		LEASI_INFO("--- creating CoverSlotMarkers ---");
 

@@ -13,6 +13,21 @@ namespace CoverClient
 	tStaticConstructObject* static_construct_object = nullptr;
 	tSingleLineCheck* SingleLineCheck = nullptr;
 
+	UObject* StaticConstructObjectOfClass(UClass* InClass, UObject* InOuter, SFXName InName, EObjectFlags InFlags, UObject* InTemplate, UObject* SubObjectRoot)
+	{
+		if (!static_construct_object)
+		{
+			LEASI_ERROR("static_construct_object is not initialized!");
+			return nullptr;
+		}
+		if (InClass == nullptr)
+		{
+			LEASI_ERROR("StaticConstructObjectOfClass called with a null class.");
+			return nullptr;
+		}
+		return static_construct_object(InClass, InOuter, InName, InFlags, InTemplate, *GError, SubObjectRoot, nullptr);
+	}
+
 	std::string ws2s(const std::wstring& wstr)
 	{
 		if (wstr.empty()) return {};

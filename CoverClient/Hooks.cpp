@@ -6,6 +6,10 @@
 #include "CoverClient/CoverGeneration.hpp"
 #include "CoverClient/CoverExport.hpp"
 #include "CoverClient/ScoutHarness.hpp"
+#include "CoverClient/EnemyHarness.hpp"
+#include "CoverClient/PathNodes.hpp"
+#include "CoverClient/FireLinks.hpp"
+#include "CoverClient/LevelSnapshot.hpp"
 #include "CoverClient/Classes/CoverLink.hpp"
 #include "CoverClient/Utilities/DebugTools.hpp"
 #include "CoverClient/Utilities/PathUtilities.hpp"
@@ -128,6 +132,45 @@ namespace CoverClient
 				ComputeExposedCover();
 			}
 
+			// These two act on the LIVE FCoverSlots that cc.sweep spawned, not on the wrapper
+			// graph cc.firelinks below builds for the host. Dispatch is Contains-based, so
+			// cc.firelinkstats has to be tested before the shorter cc.firelinks.
+			else if (CommandCopy.Contains(L"cc.firelinkstats")) {
+				CmdFireLinkStats();
+			}
+			else if (CommandCopy.Contains(L"cc.buildfirelinks")) {
+				BuildFireLinksOnSpawnedLinks();
+			}
+			else if (CommandCopy.Contains(L"cc.buildexposedcover")) {
+				BuildExposedCoverOnSpawnedLinks();
+			}
+			else if (CommandCopy.Contains(L"cc.builddangercover")) {
+				BuildDangerCoverOnSpawnedLinks();
+			}
+			else if (CommandCopy.Contains(L"cc.slotdefaults")) {
+				ApplyShippedSlotDefaults();
+			}
+			// cc.snapshot [path] -- the live network to a .milansnap file, which is what
+			// MilanCoverHost turns into <Level>_Pathfinding.pcc. Reads the real actors, not
+			// the client node model; see LevelSnapshot.hpp for why that distinction is the
+			// whole point of the file.
+			else if (CommandCopy.Contains(L"cc.snapshot")) {
+				std::wstring Path;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					Path.assign(CommandView.substr(Space + 1));
+					while (!Path.empty() && (Path.front() == L' ' || Path.front() == L'"'))
+					{
+						Path.erase(Path.begin());
+					}
+					while (!Path.empty() && (Path.back() == L' ' || Path.back() == L'"'))
+					{
+						Path.pop_back();
+					}
+				}
+				CmdWriteLevelSnapshot(Path.empty() ? nullptr : Path.c_str());
+			}
+
 
 			// Scout harness spike -- see Notes/02-le3-native-cover-functions.md
 			else if (CommandCopy.Contains(L"cc.testscout")) {
@@ -177,6 +220,80 @@ namespace CoverClient
 					if (Parsed > 0) { Count = Parsed; }
 				}
 				CmdSpawnEnemySpawnPoints(Count);
+			}
+			else if (CommandCopy.Contains(L"cc.despawnenemies")) {
+				CmdDespawnEnemies();
+			}
+			else if (CommandCopy.Contains(L"cc.spawnenemy")) {
+				// cc.spawnenemy [count] -- real Cerberus troopers on the generated network.
+				int Count = 1;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Argument{ CommandView.substr(Space + 1) };
+					wchar_t* Cursor = nullptr;
+					long const Parsed = std::wcstol(Argument.c_str(), &Cursor, 10);
+					if (Cursor != Argument.c_str()) { Count = static_cast<int>(Parsed); }
+				}
+				CmdSpawnEnemy(Count);
+			}
+			else if (CommandCopy.Contains(L"cc.seed")) {
+				// cc.seed          report the fill origin
+				// cc.seed here     pin it to where the player is standing
+				// cc.seed player   unpin, and seed from the player each run
+				bool bHasArgument = false;
+				bool bPinHere = false;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Argument{ CommandView.substr(Space + 1) };
+					if (Argument.find(L"here") != std::wstring::npos)
+					{
+						bHasArgument = true;
+						bPinHere = true;
+					}
+					else if (Argument.find(L"player") != std::wstring::npos)
+					{
+						bHasArgument = true;
+					}
+				}
+				CmdSeed(bHasArgument, bPinHere);
+			}
+			else if (CommandCopy.Contains(L"cc.floorcheck")) {
+				// cc.floorcheck [spacing] -- stand on the spot the fill will not leave and
+				// ask it why, in all eight directions.
+				float Spacing = 0.0f;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Argument{ CommandView.substr(Space + 1) };
+					wchar_t* Cursor = nullptr;
+					double const Parsed = std::wcstod(Argument.c_str(), &Cursor);
+					if (Cursor != Argument.c_str()) { Spacing = static_cast<float>(Parsed); }
+				}
+				CmdFloorCheck(Spacing);
+			}
+			else if (CommandCopy.Contains(L"cc.despawnpathnodes")) {
+				CmdDespawnPathNodes();
+			}
+			else if (CommandCopy.Contains(L"cc.pathnodes")) {
+				// cc.pathnodes [radius] [spacing] -- fill the gaps between cover with real
+				// PathNodes and join both networks up. Run it after cc.sweep: the pass
+				// deliberately refuses to place a node where the nav network already reaches,
+				// and it can only see the cover that exists when it runs.
+				float Radius = 0.0f;
+				float Spacing = 0.0f;
+				if (auto const Space = CommandView.find(L' '); Space != std::wstring_view::npos)
+				{
+					std::wstring const Arguments{ CommandView.substr(Space + 1) };
+					wchar_t* Cursor = nullptr;
+					double const First = std::wcstod(Arguments.c_str(), &Cursor);
+					if (Cursor != Arguments.c_str())
+					{
+						Radius = static_cast<float>(First);
+						wchar_t* SecondCursor = nullptr;
+						double const Second = std::wcstod(Cursor, &SecondCursor);
+						if (SecondCursor != Cursor) { Spacing = static_cast<float>(Second); }
+					}
+				}
+				CmdBuildPathNodes(Radius, Spacing, 0);
 			}
 			else if (CommandCopy.Contains(L"cc.despawnlinks")) {
 				CmdDespawnLinks();

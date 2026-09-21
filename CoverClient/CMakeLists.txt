@@ -1,4 +1,4 @@
-asi_target (CoverClient
+﻿asi_target (CoverClient
   SHARED
   GAMES "LE3" "LMP"
   EXTRA_DEBUGGER_ARGS "-bootcovertest"
@@ -25,6 +25,19 @@ asi_target (CoverClient
     "ScoutHarness.cpp"
     "CoverEdges.hpp"
     "CoverEdges.cpp"
+    "FloorSampler.hpp"
+    "FloorSampler.cpp"
+    "NavRuntime.hpp"
+    "NavRuntime.cpp"
+    "PathNodes.hpp"
+    "PathNodes.cpp"
+    "EnemyHarness.hpp"
+    "EnemyHarness.cpp"
+    "FireLinks.hpp"
+    "FireLinks.cpp"
+    "LevelTables.hpp"
+    "LevelSnapshot.hpp"
+    "LevelSnapshot.cpp"
     "Classes/ReachSpecs.hpp"
     "Classes/ReachSpecs.cpp"
     "Classes/NavigationPoint.cpp"

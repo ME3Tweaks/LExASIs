@@ -7,7 +7,7 @@
 #include "CoverClient/ScoutHarness.hpp"
 #include "CoverClient/SharedVersion.h"
 
-SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_ANY);
+SPI_PLUGINSIDE_SUPPORT(SDK_TARGET_NAME_W ASI_NAME_NO_SPACE_W, DEVELOPER_W, L"" VERSION_STRING_W, SPI_GAME_SDK_TARGET, SPI_VERSION_V4);
 SPI_PLUGINSIDE_POSTLOAD;
 SPI_PLUGINSIDE_ASYNCATTACH;
 
@@ -15,7 +15,7 @@ SPI_PLUGINSIDE_ASYNCATTACH;
 SPI_IMPLEMENT_ATTACH
 {
 	::LESDK::Initializer Init{ InterfacePtr, SDK_TARGET_NAME_A ASI_NAME_NO_SPACE_A };
-	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A, true);
+	Common::SetupDefaultLogger(SDK_TARGET_NAME_A, ASI_NAME_NO_SPACE_A, true, Init);
 	::CoverClient::InitializeGlobals(Init);
 	::CoverClient::InitializeHooks(Init);
 	LEASI_INFO("Welcome to Milan Cover Client");
@@ -25,6 +25,7 @@ SPI_IMPLEMENT_ATTACH
 SPI_IMPLEMENT_DETACH
 {
 	LEASI_UNUSED(InterfacePtr);
+	Common::ShutdownLogger();
 	return true;
 }
 

@@ -24,6 +24,11 @@ namespace CoverClient
 	using tSingleLineCheck = bool(UWorld* self, FCheckResult* hitInfo, AActor* actor, FVector* end, FVector* start, DWORD traceFlags, FVector* extent, ULightComponent* unknown);
 	extern tSingleLineCheck* SingleLineCheck;
 
+	// Same as StaticConstructObject below, for a class only known at runtime. Needed wherever
+	// the class is a parameter rather than a compile-time choice -- a ReachSpec's class IS the
+	// move it describes, so the spec builder takes it from its caller.
+	UObject* StaticConstructObjectOfClass(UClass* InClass, UObject* InOuter, SFXName InName, EObjectFlags InFlags = static_cast<EObjectFlags>(0), UObject* InTemplate = nullptr, UObject* SubObjectRoot = nullptr);
+
 	template<typename T>
 	T* StaticConstructObject(UObject* InOuter, SFXName InName, EObjectFlags InFlags = static_cast<EObjectFlags>(0), UObject* InTemplate = nullptr, UObject* SubObjectRoot = nullptr)
 	{

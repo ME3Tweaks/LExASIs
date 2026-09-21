@@ -119,9 +119,6 @@ namespace CoverClient
 	/// any good, and no way to notice you have seeded the same wall twice.
 	const std::vector<ACoverLink*>& GetSpawnedLinks();
 
-	/// cc.despawnlinks -- destroys every ACoverLink cc.spawnlink created this session, so the
-	/// level can be iterated on without accumulating junk cover. Unlinks each one from the
-	/// world's nav/cover chains first, or those chains would keep dangling pointers.
 	/// cc.enemyspawnpoint [count] -- puts real SFXEnemySpawnPoint actors on the `count` cover
 	/// slots nearest the player, out of the links cc.spawnlink / cc.sweep made. Default 1.
 	///
@@ -146,7 +143,6 @@ namespace CoverClient
 	///
 	/// This exists because the alternative was re-running a whole sweep with a new log line
 	/// added every time a screenshot showed something wrong. Point at the bad link and ask.
-	/// `index` is the L number the in-world labels show; pass -1 to pick by aim instead.
 	/// `index` is the spawn-list index (the L number). `objectNumber`, when >= 0, is the
 	/// game's own CoverLink_N number and wins over `index`. Both -1 means pick by aim.
 	void CmdExplainLink(int index, int objectNumber = -1);
@@ -154,13 +150,12 @@ namespace CoverClient
 	/// Reports one link, however it was chosen.
 	void ExplainOneLink(ACoverLink* link, int linkIndex);
 
+	/// cc.despawnlinks -- destroys every ACoverLink cc.spawnlink created this session, so the
+	/// level can be iterated on without accumulating junk cover. Unlinks each one from the
+	/// world's nav/cover chains first, or those chains would keep dangling pointers, and drops
+	/// the path network's specs into this cover for the same reason.
 	void CmdDespawnLinks();
 
-	/// cc.covercheck -- diagnostic for "the cover draws but I cannot enter it". Reports
-	/// whether each spawned link is threaded onto WorldInfo.CoverList and each marker onto
-	/// NavigationPointList (Spawn puts an actor in Level->Actors and nothing else), and runs
-	/// the engine's own ACoverLink::FindSlots against the player's position to see whether the
-	/// slots themselves are acceptable.
 	/// The number the GAME shows for a link -- 12 for "CoverLink_12", -1 if unparseable.
 	///
 	/// This exists because the console's own `profile cover self` names cover as
@@ -172,7 +167,11 @@ namespace CoverClient
 	/// The spawn-list index of a link, or -1 if it is not one of ours.
 	int LinkSpawnIndex(ACoverLink* link);
 
+	/// cc.buildslips -- cross-link cover slips. Joins the edge slot of one run to the nearest
+	/// reachable edge of another, in both directions, and builds the ReachSpec that carries
+	/// the move: SlipTarget is the permission, the spec is the route.
 	void CmdBuildSlips();
+
 	/// cc.slips [radius] -- every edge slot near the player and what it connects to.
 	///
 	/// Exists because identifying the right link to interrogate was the bottleneck: aiming
@@ -183,6 +182,11 @@ namespace CoverClient
 	/// Clears every SlipTarget this session created, so cc.buildslips can be re-run.
 	void CmdClearSlips();
 
+	/// cc.covercheck -- diagnostic for "the cover draws but I cannot enter it". Reports
+	/// whether each spawned link is threaded onto WorldInfo.CoverList and each marker onto
+	/// NavigationPointList (Spawn puts an actor in Level->Actors and nothing else), and runs
+	/// the engine's own ACoverLink::FindSlots against the player's position to see whether the
+	/// slots themselves are acceptable.
 	void CmdCoverCheck();
 
 	/// cc.testautoadjust -- the real proof. Finds the CoverLink nearest the player, snapshots
