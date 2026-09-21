@@ -13,7 +13,7 @@
 #define ASI_NAME_NO_SPACE_A "PNGScreenshots"
 #define ASI_NAME_NO_SPACE_W L"PNGScreenshots"
 
-#define ASI_VERSION 2
+#define ASI_VERSION 3
 #define ASI_DESCRIPTION "PNG Screenshots makes the photo mode save files as PNG instead of BMP files."
 
 

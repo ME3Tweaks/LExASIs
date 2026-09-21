@@ -238,8 +238,8 @@ namespace PNGScreenshots::TransparentRender
 
             // Diagnostic dumps of the raw (pre-reconciliation) white/black passes, so what each backdrop
             // actually produced can be inspected directly instead of only ever seeing the composite.
-            fpng::fpng_encode_image_to_wfile(whiteDebugPath.c_str(), white.data(), width, height, 3, 0U);
-            fpng::fpng_encode_image_to_wfile(blackDebugPath.c_str(), black.data(), width, height, 3, 0U);
+            //fpng::fpng_encode_image_to_wfile(whiteDebugPath.c_str(), white.data(), width, height, 3, 0U);
+            //fpng::fpng_encode_image_to_wfile(blackDebugPath.c_str(), black.data(), width, height, 3, 0U);
 
             fpng::fpng_encode_image_to_wfile(outPath.c_str(), rgba.data(), width, height, 4, 0U); // 4bpp (RGBA), no flags
         }
