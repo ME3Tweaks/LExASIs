@@ -40,9 +40,13 @@ namespace DebugLogger
 	{
 		Common::InitializeRequiredGlobals(Init);
 
-		// Needed for LogInternal()
-		GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RVA);
-		CHECK_RESOLVED(GNatives);
+		// LogInternal() is intentionally optional because its UnrealScript log
+		// traffic can obscure focused diagnostics such as Wwise event posts.
+		if (!std::wcsstr(GetCommandLineW(), L"-nologinternal"))
+		{
+			GNatives = Init.ResolveTyped<tNative*>(BUILTIN_GNATIVES_RVA);
+			CHECK_RESOLVED(GNatives);
+		}
 		LEASI_TRACE("Globals initialized");
 	}
 

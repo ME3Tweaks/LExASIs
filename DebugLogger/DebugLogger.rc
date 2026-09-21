@@ -37,3 +37,30 @@ BEGIN
         VALUE "Translation", 0x409, 1200
     END
 END
+
+// Command-line switches this ASI responds to, embedded so an external
+// installer/updater can discover them without loading this DLL as code.
+// Read this resource with LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+// never LoadLibrary, since the DLL's game-specific dependencies may not be resolvable
+// in the reading process.
+//
+// This file is preprocessed like any other translation unit, so switches that only exist
+// in a subset of game builds (i.e. guarded by #if defined(SDK_TARGET_LEx) in the .cpp, as
+// -wwiseevent is in LE3Hooks.cpp) must be guarded here identically, so each per-game .asi
+// only advertises the switches it actually compiled in. The first array entry has no
+// leading comma; every entry after it (conditional or not) is written with one, so entries
+// can be freely #if'd out without producing invalid JSON.
+ME3TWEAKS_CMDLINE_ARGS RCDATA
+BEGIN
+    "{""schemaVersion"":1,""commands"":["
+    "{""name"":""-nologinternal"",""description"":""Disables the LogInternal hook (UnrealScript log traffic), which is very verbose and can obscure focused diagnostics.""}"
+    ",{""name"":""-debugexportcreation"",""description"":""Logs every export's creation for deep debugging of export creation failures.""}"
+    ",{""name"":""-findpackagefile"",""description"":""Logs FindPackageFile lookups, including misses, to trace package file resolution.""}"
+#if defined(SDK_TARGET_LE3)
+    // -wwiseevent only exists in LE3Hooks.cpp, which is #if defined(SDK_TARGET_LE3)-gated.
+    // LMP also defines SDK_TARGET_LE3 (it builds against the LE3 SDK flavor), so it is included there too.
+    ",{""name"":""-wwiseevent"",""description"":""Logs Wwise audio events by hooking both the numeric and string AK::SoundEngine::PostEvent overloads.""}"
+#endif
+    ",{""name"":""-trace-log-level"",""description"":""Raises the log level to trace in release builds (normally info-level only).""}"
+    "]}"
+END

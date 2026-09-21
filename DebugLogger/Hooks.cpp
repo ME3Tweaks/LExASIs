@@ -18,12 +18,22 @@ namespace DebugLogger
 
 	void InstallSharedHooks(::LESDK::Initializer& Init)
 	{
+		// OutputDebugStringW is called during ASI startup. Create its hook in a
+		// disabled state so its trampoline is published before any thread can
+		// enter the detour.
+		#define INSTALL_OUTPUTDEBUGSTRINGW_DEFERRED(INIT, TARGET) \
+			do { \
+				OutputDebugStringW_orig = reinterpret_cast<tOutputDebugStringW*>((INIT).InstallHookDeferred("OutputDebugStringW", (TARGET), OutputDebugStringW_hook)); \
+				CHECK_RESOLVED(OutputDebugStringW_orig); \
+				(INIT).EnableHook("OutputDebugStringW"); \
+			} while (false)
+
 		// Debug String Output
 		// ----------------------------------------
 		auto const outputDebugStringW_target = Init.ResolveTyped<tOutputDebugStringW>(::LESDK::Address::FromAbsolute(OutputDebugStringW));
 		CHECK_RESOLVED(outputDebugStringW_target);
-		OutputDebugStringW_orig = (tOutputDebugStringW*)Init.InstallHook("OutputDebugStringW", outputDebugStringW_target, OutputDebugStringW_hook);
-		CHECK_RESOLVED(OutputDebugStringW_orig);
+		INSTALL_OUTPUTDEBUGSTRINGW_DEFERRED(Init, outputDebugStringW_target);
+		#undef INSTALL_OUTPUTDEBUGSTRINGW_DEFERRED
 
 		// Import resolution failures
 		//----------------------------------------
@@ -61,20 +71,23 @@ namespace DebugLogger
 		StaticAllocateObject_orig = (tStaticAllocateObject*)Init.InstallHook("StaticAllocateObject", StaticAllocateObject_target, StaticAllocateObject_hook);
 		CHECK_RESOLVED(StaticAllocateObject_orig);
 
-		// LogInternal - allows logging from UnrealScript
+		// LogInternal - allows logging from UnrealScript. This is very verbose,
+		// so leave the game's logging path untouched when explicitly disabled.
 		// ---------------------------------------
-		//INIT_FIND_PATTERN_POSTHOOK(LogInternal, /*"40 57 48 83 ec 40 48 c7 44 24 20 fe ff ff ff 48 89 5c 24 50 48 89 74 24 60 48 8b da 33 f6 48 89 74 24 28 48 89 74 24 30");
-		//INIT_HOOK_PATTERN(LogInternal);
-
-		auto const LogInternal_target = Init.ResolveTyped<tLogInternal>(BUILTIN_OBJECT_LOGINTERNAL_RVA);
-		CHECK_RESOLVED(LogInternal_target);
-		LogInternal_orig = (tLogInternal*)Init.InstallHook("LogInternal", LogInternal_target, LogInternal_hook);
-		CHECK_RESOLVED(LogInternal_orig);
+		if (!std::wcsstr(GetCommandLineW(), L"-nologinternal"))
+		{
+			auto const LogInternal_target = Init.ResolveTyped<tLogInternal>(BUILTIN_OBJECT_LOGINTERNAL_RVA);
+			CHECK_RESOLVED(LogInternal_target);
+			LogInternal_orig = (tLogInternal*)Init.InstallHook("LogInternal", LogInternal_target, LogInternal_hook);
+			CHECK_RESOLVED(LogInternal_orig);
+		}
+		else
+		{
+			LEASI_INFO("LogInternal logging disabled (-nologinternal)");
+		}
 
 		// FErrorOutputDevice::Logf - for executable message logs
 		// ---------------------------------------
-		//INIT_FIND_PATTERN_POSTHOOK(FOutputDeviceLogf, /*48 8b c4 48 89*/ "50 10 4c 89 40 18 4c 89 48 20 56 48 83 ec 50 83 79 08 00 48 8b f1 0f 85 bf 00 00 00");
-		//INIT_HOOK_PATTERN(FOutputDeviceLogf);
 		auto const FOutputDeviceLogf_target = Init.ResolveTyped<tFOutputDeviceLogf>(BUILTIN_APPLOGF_RVA);
 		CHECK_RESOLVED(FOutputDeviceLogf_target);
 		FOutputDeviceLogf_orig = (tFOutputDeviceLogf*)Init.InstallHook("FOutputDeviceLogf", FOutputDeviceLogf_target, FOutputDeviceLogf_hook);
@@ -82,28 +95,34 @@ namespace DebugLogger
 
 		// FErrorOutputDeviceLogf - for executable error logging
 		// ---------------------------------------
-		//INIT_FIND_PATTERN_POSTHOOK(FErrorOutputDeviceLogf, /*"48 8b c4 48 89*/ "50 10 4c 89 40 18 4c 89 48 20 56 48 83 ec 50 83 79 08 00 48 8b f1");
-		//INIT_HOOK_PATTERN(FErrorOutputDeviceLogf);
 		auto const FErrorOutputDeviceLogf_target = Init.ResolveTyped<tFOutputDeviceErrorLogf>(BUILTIN_APPERRORLOGF_RVA);
 		CHECK_RESOLVED(FErrorOutputDeviceLogf_target);
 		FErrorOutputDeviceLogf_orig = (tFOutputDeviceErrorLogf*)Init.InstallHook("FErrorOutputDeviceLogf", FErrorOutputDeviceLogf_target, FErrorOutputDeviceLogf_hook);
 		CHECK_RESOLVED(FErrorOutputDeviceLogf_orig);
 
-		/*
-		// UObject::ProcessEvent hook for UnrealScript Activated() logging
-		// ----------------------------------------
-		auto const UObject_ProcessEvent_target = Init.ResolveTyped<t_UObject_ProcessEvent>(BUILTIN_PROCESSEVENT_PHOOK);
-		CHECK_RESOLVED(UObject_ProcessEvent_target);
-		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
-		CHECK_RESOLVED(UObject_ProcessEvent_orig);
+		// FindPackageFile - for logging file lookups (and seeing when they don't have a hit)
+		// ---------------------------------------
+		if (std::wcsstr(GetCommandLineW(), L" -findpackagefile")) // !0 means its in there somewhere.
+		{
+			auto const FindPackageFile_target = Init.ResolveTyped<t_FindPackageFile>(BUILTIN_FINDPACKAGEFILE_RVA);
+			CHECK_RESOLVED(FindPackageFile_target);
+			FindPackageFile_orig = reinterpret_cast<t_FindPackageFile*>(Init.InstallHook("FindPackageFile", FindPackageFile_target, FindPackageFile_hook));
+			CHECK_RESOLVED(FindPackageFile_orig);
+		}
 
-		// UObject::ProcessInternal hook for native Activated() logging
-		// ----------------------------------------
-		auto const UObject_ProcessInternal_target = Init.ResolveTyped<t_UObject_ProcessInternal>(BUILTIN_PROCESSINTERNAL_PHOOK);
-		CHECK_RESOLVED(UObject_ProcessInternal_target);
-		UObject_ProcessInternal_orig = (t_UObject_ProcessInternal*)Init.InstallHook("UObject::ProcessInternal", UObject_ProcessInternal_target, UObject_ProcessInternal_hook);
-		CHECK_RESOLVED(UObject_ProcessInternal_orig);
-		*/
+		// appHandleIOFailure - for tracing I/O failure code paths
+		// -----------------------------------------
+		
+		auto const iofailure_target = Init.ResolveTyped<tIOFailure>(LEASI_RVA(0x14d6f0));
+		CHECK_RESOLVED(iofailure_target);
+		IOFailure_orig = reinterpret_cast<tIOFailure*>(Init.InstallHook("IOFailure", iofailure_target, IOFailure_hook));
+		CHECK_RESOLVED(IOFailure_orig);
+
+
+		/*auto const ULinkLoaderLoadSerializeName_target = Init.ResolveTyped<tFOutputDeviceErrorLogf>(LEASI_RVA(0xfa580));
+		CHECK_RESOLVED(ULinkLoaderLoadSerializeName_target);
+		ULinkerSerializeName_orig = (tULinkerSerializeName*)Init.InstallHook("ULinkerSerializeName", ULinkLoaderLoadSerializeName_target, ULinkerSerializeName_hook);
+		CHECK_RESOLVED(ULinkerSerializeName_orig);*/
 
 		InstallVerboseLoggerHooks(Init);
 		LEASI_INFO("Hooks initialized");
@@ -111,19 +130,46 @@ namespace DebugLogger
 
 #pragma region OutputDebugStringW
 	tOutputDebugStringW* OutputDebugStringW_orig = nullptr;
-	void OutputDebugStringW_hook(LPCWSTR lpcszString)
+	void WINAPI OutputDebugStringW_hook(LPCWSTR lpcszString)
 	{
-		OutputDebugStringW_orig(lpcszString);
+		static thread_local bool inOutputDebugStringWHook = false;
+		auto const original = OutputDebugStringW_orig;
+		if (original == nullptr)
+			return;
+		auto const safeString = lpcszString != nullptr ? lpcszString : L"";
 
-		// Strip trailing newline before feeding to LEASI_INFO
-		// Maybe consider prefixing with [DEBUG] or similar in future
-		std::wstring strToLog(lpcszString);
-		if (!strToLog.empty() && strToLog.back() == L'\n')
+		if (inOutputDebugStringWHook)
 		{
-			strToLog.pop_back();
+			original(safeString);
+			return;
 		}
 
-		LEASI_INFO(strToLog);
+		inOutputDebugStringWHook = true;
+		struct RecursionGuard final
+		{
+			bool& active;
+			~RecursionGuard() { active = false; }
+		} recursionGuard{ inOutputDebugStringWHook };
+
+		original(safeString);
+
+		try
+		{
+			// Strip trailing newline before feeding to LEASI_INFO
+			// Maybe consider prefixing with [DEBUG] or similar in future
+			std::wstring strToLog = lpcszString != nullptr ? lpcszString : L"<null>";
+			if (!strToLog.empty() && strToLog.back() == L'\n')
+			{
+				strToLog.pop_back();
+			}
+
+			LEASI_INFO(L"{}", strToLog);
+			LEASI_FLUSH();
+		}
+		catch (...)
+		{
+			// OutputDebugStringW must remain fail-open if capture or logging fails.
+		}
 	}
 #pragma endregion
 
@@ -185,9 +231,14 @@ namespace DebugLogger
 		return object;
 	}
 
+	FString currentSerializingFile;
+	int currentCreatingExportIdx = -1;
+
 	tCreateEntry* CreateExport_orig = nullptr;
 	UObject* CreateExport_hook(ULinkerLoad* Context, int i)
 	{
+		currentSerializingFile = Context->Filename;
+		currentCreatingExportIdx = i;
 		if (bLogExportCreation) {
 			LEASI_INFO(L"Creating Export {} in {}", i + 1, Context->Filename);
 		}
@@ -322,14 +373,29 @@ namespace DebugLogger
 
 #pragma region FErrorOutputDevice::Logf
 	tFOutputDeviceErrorLogf* FErrorOutputDeviceLogf_orig = nullptr;
-	void FErrorOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4)
+	void FErrorOutputDeviceLogf_hook(void* outputDevice, wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4, void* param5, void* param6, void* param7, void* param8, void* param9)
 	{
 		LEASI_UNUSED(outputDevice);
-		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4);
+		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4, param5, param6, param7, param8, param9);
 		LEASI_ERROR(L"appLogErrorf: {}", logMessage);
 	}
 #pragma endregion FErrorOutputDevice::Logf
 
+
+	// ! AppThrow
+	// ========================================
+	tAppThrowF* AppThrowF_orig = nullptr;
+	void AppThrowF_hook(wchar_t* formatStr, void* param1, void* param2, void* param3, void* param4, void* param5, void* param6)
+	{
+		auto logMessage = FString::Printf(formatStr, param1, param2, param3, param4, param5, param6);
+		LEASI_ERROR(L"appThrowf: {}", logMessage);
+		LEASI_FLUSH();
+
+		// Let the real appThrowf format (again) and throw the exception itself -
+		// the throw has to originate from inside the game's own module so the
+		// C++ EH runtime resolves its (image-relative) ThrowInfo correctly.
+		AppThrowF_orig(formatStr, param1, param2, param3, param4, param5, param6);
+	}
 
 	// ! UObject::ProcessEvent hook
 	// ========================================
@@ -360,4 +426,144 @@ namespace DebugLogger
 
 		UObject_ProcessInternal_orig(Context, Stack, Result);
 	}
+
+	// ! ULinkerLoad::operator<<Name hook
+	// ========================================
+	tULinkerSerializeName* ULinkerSerializeName_orig = nullptr;
+	void* ULinkerSerializeName_hook(ULinkerLoad* self, SFXName* name)
+	{
+		auto result = ULinkerSerializeName_orig(self, name);
+		return result;
+	}
+
+	// ! FindPackageFile
+	// ========================================
+	t_FindPackageFile* FindPackageFile_orig = nullptr;
+	unsigned FindPackageFile_hook(void* This, wchar_t* InName, FGuid* Guid, FString* OutFileName, const wchar_t* Language, unsigned Unk)
+	{
+
+		// First try the original file lookup
+		auto result = FindPackageFile_orig(This, InName, Guid, OutFileName, Language, Unk);
+
+		// If not found on disk and we have a valid name, check precache map
+		if (!result)
+		{
+			LEASI_WARN(L"FindPackageFile: File not found {}", InName);
+		}
+
+		return result;
+	}
+
+	// ! I/O Failure
+	// ========================================
+	tIOFailure* IOFailure_orig = nullptr;
+	void IOFailure_hook(wchar_t* filename)
+	{
+		if (filename == nullptr) {
+			filename = L"Unknown file";
+		}
+		LEASI_ERROR(L"I/O failure operating on {}", filename);
+	}
+
+#ifdef SDK_TARGET_LE3
+	// ! WwiseParseBank
+	// ========================================
+	inline std::wstring AkResultToWString(AKRESULT result)
+	{
+		switch (result)
+		{
+		case AK_NotImplemented:              return L"AK_NotImplemented";
+		case AK_Success:                     return L"AK_Success";
+		case AK_Fail:                        return L"AK_Fail";
+		case AK_PartialSuccess:              return L"AK_PartialSuccess";
+		case AK_NotCompatible:               return L"AK_NotCompatible";
+		case AK_AlreadyConnected:            return L"AK_AlreadyConnected";
+		case AK_InvalidFile:                 return L"AK_InvalidFile";
+		case AK_AudioFileHeaderTooLarge:     return L"AK_AudioFileHeaderTooLarge";
+		case AK_MaxReached:                  return L"AK_MaxReached";
+		case AK_InvalidID:                   return L"AK_InvalidID";
+		case AK_IDNotFound:                  return L"AK_IDNotFound";
+		case AK_InvalidInstanceID:           return L"AK_InvalidInstanceID";
+		case AK_NoMoreData:                  return L"AK_NoMoreData";
+		case AK_InvalidStateGroup:           return L"AK_InvalidStateGroup";
+		case AK_ChildAlreadyHasAParent:      return L"AK_ChildAlreadyHasAParent";
+		case AK_InvalidLanguage:             return L"AK_InvalidLanguage";
+		case AK_CannotAddItselfAsAChild:     return L"AK_CannotAddItselfAsAChild";
+		case AK_InvalidParameter:            return L"AK_InvalidParameter";
+		case AK_ElementAlreadyInList:        return L"AK_ElementAlreadyInList";
+		case AK_PathNotFound:                return L"AK_PathNotFound";
+		case AK_PathNoVertices:              return L"AK_PathNoVertices";
+		case AK_PathNotRunning:              return L"AK_PathNotRunning";
+		case AK_PathNotPaused:               return L"AK_PathNotPaused";
+		case AK_PathNodeAlreadyInList:       return L"AK_PathNodeAlreadyInList";
+		case AK_PathNodeNotInList:           return L"AK_PathNodeNotInList";
+		case AK_DataNeeded:                  return L"AK_DataNeeded";
+		case AK_NoDataNeeded:                return L"AK_NoDataNeeded";
+		case AK_DataReady:                   return L"AK_DataReady";
+		case AK_NoDataReady:                 return L"AK_NoDataReady";
+		case AK_InsufficientMemory:          return L"AK_InsufficientMemory";
+		case AK_Cancelled:                   return L"AK_Cancelled";
+		case AK_UnknownBankID:               return L"AK_UnknownBankID";
+		case AK_BankReadError:               return L"AK_BankReadError";
+		case AK_InvalidSwitchType:           return L"AK_InvalidSwitchType";
+		case AK_FormatNotReady:              return L"AK_FormatNotReady";
+		case AK_WrongBankVersion:            return L"AK_WrongBankVersion";
+		case AK_FileNotFound:                return L"AK_FileNotFound";
+		case AK_DeviceNotReady:              return L"AK_DeviceNotReady";
+		case AK_BankAlreadyLoaded:           return L"AK_BankAlreadyLoaded";
+		case AK_RenderedFX:                  return L"AK_RenderedFX";
+		case AK_ProcessNeeded:                return L"AK_ProcessNeeded";
+		case AK_ProcessDone:                 return L"AK_ProcessDone";
+		case AK_MemManagerNotInitialized:    return L"AK_MemManagerNotInitialized";
+		case AK_StreamMgrNotInitialized:     return L"AK_StreamMgrNotInitialized";
+		case AK_SSEInstructionsNotSupported: return L"AK_SSEInstructionsNotSupported";
+		case AK_Busy:                        return L"AK_Busy";
+		case AK_UnsupportedChannelConfig:    return L"AK_UnsupportedChannelConfig";
+		case AK_PluginMediaNotAvailable:     return L"AK_PluginMediaNotAvailable";
+		case AK_MustBeVirtualized:           return L"AK_MustBeVirtualized";
+		case AK_CommandTooLarge:             return L"AK_CommandTooLarge";
+		case AK_RejectedByFilter:            return L"AK_RejectedByFilter";
+		case AK_InvalidCustomPlatformName:   return L"AK_InvalidCustomPlatformName";
+		case AK_DLLCannotLoad:               return L"AK_DLLCannotLoad";
+		case AK_DLLPathNotFound:             return L"AK_DLLPathNotFound";
+		case AK_NoJavaVM:                    return L"AK_NoJavaVM";
+		case AK_OpenSLError:                 return L"AK_OpenSLError";
+		case AK_PluginNotRegistered:         return L"AK_PluginNotRegistered";
+		case AK_DataAlignmentError:          return L"AK_DataAlignmentError";
+		case AK_DeviceNotCompatible:         return L"AK_DeviceNotCompatible";
+		case AK_DuplicateUniqueID:           return L"AK_DuplicateUniqueID";
+		case AK_InitBankNotLoaded:           return L"AK_InitBankNotLoaded";
+		case AK_DeviceNotFound:              return L"AK_DeviceNotFound";
+		case AK_PlayingIDNotFound:           return L"AK_PlayingIDNotFound";
+		case AK_InvalidFloatValue:           return L"AK_InvalidFloatValue";
+		case AK_FileFormatMismatch:          return L"AK_FileFormatMismatch";
+		case AK_NoDistinctListener:          return L"AK_NoDistinctListener";
+		case AK_ResourceInUse:               return L"AK_ResourceInUse";
+		case AK_InvalidBankType:             return L"AK_InvalidBankType";
+		case AK_AlreadyInitialized:          return L"AK_AlreadyInitialized";
+		case AK_NotInitialized:              return L"AK_NotInitialized";
+		case AK_FilePermissionError:         return L"AK_FilePermissionError";
+		case AK_UnknownFileError:            return L"AK_UnknownFileError";
+		case AK_TooManyConcurrentOperations: return L"AK_TooManyConcurrentOperations";
+		case AK_InvalidFileSize:             return L"AK_InvalidFileSize";
+		case AK_Deferred:                    return L"AK_Deferred";
+		case AK_FilePathTooLong:             return L"AK_FilePathTooLong";
+		case AK_InvalidState:                return L"AK_InvalidState";
+		default:                             return L"AK_UnknownResult";
+		}
+	}
+
+	tParseWwiseBank* ParseWwiseBank_orig = nullptr;
+	AKRESULT ParseWwiseBank_hook(void* param_1, WwiseBankLoadParams* param_2, void* param_3, int param_4, char param_5, char param6)
+	{
+		LEASI_DEBUG(L"WwiseParseBank id {}", param_2->bankID);
+		auto result = ParseWwiseBank_orig(param_1, param_2, param_3, param_4, param_5, param6);
+		if (result != AKRESULT::AK_Success)
+		{
+			LEASI_ERROR(L"WwiseParseBank failed with code {} ({}) for bank id {} (0x{:X})", AkResultToWString(result).c_str(), static_cast<int>(result), param_2->bankID, param_2->bankID);
+		}
+		return result;
+	}
+
+#endif
 }
