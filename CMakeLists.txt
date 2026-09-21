@@ -151,7 +151,7 @@ endfunction ()
 
 # Sets up an ASI library target according to our conventions.
 function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
-  cmake_parse_arguments (PROJ "" "" "GAMES;SOURCES;LINKS;VLINKS" ${ARGN})
+  cmake_parse_arguments (PROJ "" "EXTRA_DEBUGGER_ARGS" "GAMES;SOURCES;LINKS;VLINKS" ${ARGN})
 
   list (TRANSFORM PROJ_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 
@@ -178,9 +178,14 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         add_custom_command (TARGET ${PROJ_TARGET}-LE1 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${COPY_SOURCE} ${COPY_DEST})
 
+        set (LE1_DEBUGGER_ARGS "-NOHOMEDIR -enableminidumps -nosplash")
+        if (PROJ_EXTRA_DEBUGGER_ARGS)
+          set (LE1_DEBUGGER_ARGS "${LE1_DEBUGGER_ARGS} ${PROJ_EXTRA_DEBUGGER_ARGS}")
+        endif ()
+
         set_target_properties (${PROJ_TARGET}-LE1 PROPERTIES
           VS_DEBUGGER_COMMAND "${LEASI_GAME1_WIN64}/MassEffect1.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS "-NOHOMEDIR -enableminidumps -nosplash"
+          VS_DEBUGGER_COMMAND_ARGUMENTS "${LE1_DEBUGGER_ARGS}"
           VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAME1_WIN64}"
         )
       endif ()
@@ -198,9 +203,14 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         add_custom_command (TARGET ${PROJ_TARGET}-LE2 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${COPY_SOURCE} ${COPY_DEST})
 
+        set (LE2_DEBUGGER_ARGS "-NOHOMEDIR -enableminidumps -nosplash")
+        if (PROJ_EXTRA_DEBUGGER_ARGS)
+          set (LE2_DEBUGGER_ARGS "${LE2_DEBUGGER_ARGS} ${PROJ_EXTRA_DEBUGGER_ARGS}")
+        endif ()
+
         set_target_properties (${PROJ_TARGET}-LE2 PROPERTIES
           VS_DEBUGGER_COMMAND "${LEASI_GAME2_WIN64}/MassEffect2.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS "-NOHOMEDIR -enableminidumps -nosplash"
+          VS_DEBUGGER_COMMAND_ARGUMENTS "${LE2_DEBUGGER_ARGS}"
           VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAME2_WIN64}"
         )
       endif ()
@@ -218,9 +228,14 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         add_custom_command (TARGET ${PROJ_TARGET}-LE3 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${COPY_SOURCE} ${COPY_DEST})
 
+        set (LE3_DEBUGGER_ARGS "-enableminidumps -nosplash")
+        if (PROJ_EXTRA_DEBUGGER_ARGS)
+          set (LE3_DEBUGGER_ARGS "${LE3_DEBUGGER_ARGS} ${PROJ_EXTRA_DEBUGGER_ARGS}")
+        endif ()
+
         set_target_properties (${PROJ_TARGET}-LE3 PROPERTIES
           VS_DEBUGGER_COMMAND "${LEASI_GAME3_WIN64}/MassEffect3.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS "-enableminidumps -nosplash"
+          VS_DEBUGGER_COMMAND_ARGUMENTS "${LE3_DEBUGGER_ARGS}"
           VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAME3_WIN64}"
         )
       endif ()
@@ -238,9 +253,14 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         add_custom_command (TARGET ${PROJ_TARGET}-LMP POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${COPY_SOURCE} ${COPY_DEST})
 
+        set (LMP_DEBUGGER_ARGS "-enableminidumps -nosplash")
+        if (PROJ_EXTRA_DEBUGGER_ARGS)
+          set (LMP_DEBUGGER_ARGS "${LMP_DEBUGGER_ARGS} ${PROJ_EXTRA_DEBUGGER_ARGS}")
+        endif ()
+
         set_target_properties (${PROJ_TARGET}-LMP PROPERTIES
           VS_DEBUGGER_COMMAND "${MILAN_GAME_WIN64}/MassEffectMultiplayer.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS "-enableminidumps -nosplash"
+          VS_DEBUGGER_COMMAND_ARGUMENTS "${LMP_DEBUGGER_ARGS}"
           VS_DEBUGGER_WORKING_DIRECTORY "${MILAN_GAME_WIN64}"
         )
       endif ()
@@ -258,9 +278,14 @@ function (ASI_TARGET PROJ_TARGET PROJ_TYPE)
 
         add_custom_command (TARGET ${PROJ_TARGET}-LEL POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${COPY_SOURCE} ${COPY_DEST})
 
+        set (LEL_DEBUGGER_ARGS "")
+        if (PROJ_EXTRA_DEBUGGER_ARGS)
+          set (LEL_DEBUGGER_ARGS "${PROJ_EXTRA_DEBUGGER_ARGS}")
+        endif ()
+
         set_target_properties (${PROJ_TARGET}-LEL PROPERTIES
           VS_DEBUGGER_COMMAND "${LEASI_GAMEL_WIN64}/MassEffectLauncher.exe"
-          VS_DEBUGGER_COMMAND_ARGUMENTS ""
+          VS_DEBUGGER_COMMAND_ARGUMENTS "${LEL_DEBUGGER_ARGS}"
           VS_DEBUGGER_WORKING_DIRECTORY "${LEASI_GAMEL_WIN64}"
         )
       endif ()
@@ -290,6 +315,7 @@ add_subdirectory ("HotReload")
 add_subdirectory ("PNGScreenshots")
 add_subdirectory ("2DAPrinter")
 add_subdirectory ("DebugLogger")
+add_subdirectory ("LinkerPatcher")
 add_subdirectory ("AutoTOC")
 add_subdirectory ("DiscordIntegration")
 add_subdirectory ("AceSlammer")
