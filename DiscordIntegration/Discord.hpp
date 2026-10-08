@@ -18,7 +18,16 @@ namespace DiscordIntegration
 	void updateStatus();
 	void ShutdownClient();
 
-	char* getUserSecret();
-	void connectWithSecret(bool refresh);
-	void setUserSecret(char* secret);
+	// OAuth tokens persisted in Credential Manager under CREDENTIAL_TARGET.
+	struct StoredTokens {
+		std::string accessToken;
+		std::string refreshToken;
+		int64_t expiresAt = 0; // Unix seconds
+	};
+
+	bool getStoredTokens(StoredTokens& out);
+	void storeTokens(const std::string& accessToken, const std::string& refreshToken, int32_t expiresIn);
+	void beginAuthorization();
+	void refreshAndConnect(const std::string& refreshToken);
+	void connectWithToken(const std::string& accessToken);
 }

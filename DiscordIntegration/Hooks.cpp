@@ -1,6 +1,7 @@
 #include "Hooks.hpp"
 #include "Entry.hpp"
 #include "Discord.hpp"
+#include "LmpPresence.hpp"
 
 namespace DiscordIntegration
 {
@@ -64,7 +65,14 @@ namespace DiscordIntegration
 				ShutdownClient();
 			}
 			else {
-				if (delta >= 8000) {
+#ifdef LEASI_GAME_LMP
+				// Lobby changes go out sooner, within Discord's limit of 5 updates per 20 seconds.
+				Lmp::Tick();
+				bool const lobbyChanged = Lmp::HasUnsentChange() && delta >= 4000;
+#else
+				bool const lobbyChanged = false;
+#endif
+				if (delta >= 8000 || lobbyChanged) {
 					lastUpdate = now;
 					updateStatus();
 				}

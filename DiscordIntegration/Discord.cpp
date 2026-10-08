@@ -6,6 +6,7 @@
 #include "DiscordIntegration/Discord.hpp"
 #include "DiscordIntegration/Hooks.hpp"
 #include "DiscordIntegration/Entry.hpp"
+#include "DiscordIntegration/LmpPresence.hpp"
 #include "Common/Base.hpp"
 #include "Common/Objects.hpp"
 #include "LESDK/Common/Common.hpp"
@@ -15,13 +16,23 @@
 #include <string.h>
 #include <wincred.h>
 #include <simdutf.h>
+#include <charconv>
+#include <format>
 #include <map>
+#include <string_view>
 
 
 namespace DiscordIntegration
 {
-	// Discord Application ID
+	// Discord Application ID. LMP has its own application, and so its own saved token: a token
+	// is only valid for the application that was authorized.
+#ifdef LEASI_GAME_LMP
+	const uint64_t APPLICATION_ID = 1438008086085501019;
+	const wchar_t* const CREDENTIAL_TARGET = L"MassEffectLMPDiscordIntegration";
+#else
 	const uint64_t APPLICATION_ID = 1438715716516974656;
+	const wchar_t* const CREDENTIAL_TARGET = L"MassEffectLEDiscordIntegration";
+#endif
 
 	// ! Extern definitions
 	// =======================
@@ -39,6 +50,10 @@ namespace DiscordIntegration
 
 	bool useLocalClient = false;
 	std::string currentState = "Unknown map";
+
+	// Set while connecting with a bare access token saved by an older build. It has no refresh
+	// token, so if Discord rejects it the only way forward is to authorize again.
+	bool connectingWithLegacyToken = false;
 
 	// Detects if Discord is running by checking the list of active processes.
 	bool IsDiscordRunning() {
@@ -83,6 +98,14 @@ namespace DiscordIntegration
 			LEASI_INFO("[{}] {}", EnumToString(severity), message);
 			}, discordpp::LoggingSeverity::Info);
 
+#ifdef LEASI_GAME_LMP
+		// Joins accepted in the Discord app, whether LMP was already running or Discord started it.
+		client->SetActivityJoinCallback([](std::string joinSecret) {
+			Lmp::OnJoinSecret(joinSecret);
+			});
+		Lmp::RegisterLaunchCommand(*client, APPLICATION_ID);
+#endif
+
 		useLocalClient = IsDiscordRunning();
 
 		if (!useLocalClient) {
@@ -92,60 +115,91 @@ namespace DiscordIntegration
 
 				if (status == discordpp::Client::Status::Ready) {
 					LEASI_INFO("Client is ready! You can now call SDK functions.\n");
+					connectingWithLegacyToken = false;
 					discordSDKReady = true;
 				}
 				else if (error != discordpp::Client::Error::None) {
 					LEASI_ERROR(" Connection Error : {} - Details : {}\n", discordpp::Client::ErrorToString(error), errorDetail);
+
+					// The SDK reports a rejected token as UnexpectedClose. Network failures use the
+					// other errors and shouldn't send the user to the login page.
+					if (connectingWithLegacyToken && status == discordpp::Client::Status::Disconnected
+						&& error == discordpp::Client::Error::UnexpectedClose) {
+						LEASI_INFO("Saved Discord token was rejected, authorization is required.\n");
+						connectingWithLegacyToken = false;
+						beginAuthorization();
+					}
 				}
 				});
 
-			// Generate OAuth2 code verifier for authentication
-			auto codeVerifier = client->CreateAuthorizationCodeVerifier();
-
-			// Set up authentication arguments
-			discordpp::AuthorizationArgs args{};
-			args.SetClientId(APPLICATION_ID);
-			// Discord doesn't let you use just activites.write, which is private,
-			// even though its granted via social layer. Seems kind of dumb to have to
-			// request more permissions.
-			args.SetScopes(discordpp::Client::GetDefaultPresenceScopes());
-			args.SetCodeChallenge(codeVerifier.Challenge());
-
-
-			auto existingToken = getUserSecret();
-			if (existingToken != nullptr) {
-				connectWithSecret(true);
+			// A saved refresh token avoids prompting the user again. Refreshing also rotates the
+			// pair, so the new access token is the only one handed to the SDK.
+			StoredTokens stored;
+			if (getStoredTokens(stored)) {
+				if (!stored.refreshToken.empty()) {
+					LEASI_INFO("Refreshing saved Discord token...\n");
+					refreshAndConnect(stored.refreshToken);
+				}
+				else {
+					// Saved by an older build: try it as-is, and authorize if Discord rejects it.
+					LEASI_INFO("Connecting with saved Discord token from an older version...\n");
+					connectingWithLegacyToken = true;
+					connectWithToken(stored.accessToken);
+				}
 				return;
 			}
 
-			// Begin authentication process
-			client->Authorize(args, [codeVerifier](auto result, auto code, auto redirectUri) {
-				if (!result.Successful()) {
-					LEASI_ERROR("Authentication Error: {}\n", result.Error());
-					return;
-				}
-				else {
-					LEASI_INFO("Authorization successful! Getting access token...\n");
-
-					// Exchange auth code for access token
-					client->GetToken(APPLICATION_ID, code, codeVerifier.Verifier(), redirectUri,
-						[](discordpp::ClientResult result,
-							std::string accessToken,
-							std::string refreshToken,
-							discordpp::AuthorizationTokenType tokenType,
-							int32_t expiresIn,
-							std::string scope) {
-								LEASI_UNUSED_5(result, refreshToken, tokenType, expiresIn, scope);
-								LEASI_INFO("Access token received! Establishing connection...\n");
-								setUserSecret((char*)accessToken.c_str());
-								connectWithSecret(false);
-						});
-				}
-				});
+			beginAuthorization();
 		}
 		else {
 			discordSDKReady = true;
 		}
+	}
+
+	/// <summary>
+	/// Runs the OAuth2 authorization flow, then saves the tokens and connects.
+	/// </summary>
+	void beginAuthorization() {
+		// Generate OAuth2 code verifier for authentication
+		auto codeVerifier = client->CreateAuthorizationCodeVerifier();
+
+		// Set up authentication arguments
+		discordpp::AuthorizationArgs args{};
+		args.SetClientId(APPLICATION_ID);
+		// Discord doesn't let you use just activites.write, which is private,
+		// even though its granted via social layer. Seems kind of dumb to have to
+		// request more permissions.
+		args.SetScopes(discordpp::Client::GetDefaultPresenceScopes());
+		args.SetCodeChallenge(codeVerifier.Challenge());
+
+		// Begin authentication process
+		client->Authorize(args, [codeVerifier](auto result, auto code, auto redirectUri) {
+			if (!result.Successful()) {
+				LEASI_ERROR("Authentication Error: {}\n", result.Error());
+				return;
+			}
+
+			LEASI_INFO("Authorization successful! Getting access token...\n");
+
+			// Exchange auth code for access token
+			client->GetToken(APPLICATION_ID, code, codeVerifier.Verifier(), redirectUri,
+				[](discordpp::ClientResult result,
+					std::string accessToken,
+					std::string refreshToken,
+					discordpp::AuthorizationTokenType tokenType,
+					int32_t expiresIn,
+					std::string scope) {
+						LEASI_UNUSED_2(tokenType, scope);
+						if (!result.Successful()) {
+							LEASI_ERROR("Error getting access token: {}\n", result.Error());
+							return;
+						}
+
+						LEASI_INFO("Access token received! Establishing connection...\n");
+						storeTokens(accessToken, refreshToken, expiresIn);
+						connectWithToken(accessToken);
+				});
+			});
 	}
 
 	/// <summary>
@@ -260,6 +314,7 @@ namespace DiscordIntegration
 
 	void updateStatus()
 	{
+#ifndef LEASI_GAME_LMP
 		if (GWorld && *GWorld) {
 			auto package = (*GWorld)->GetPackageName();
 			auto packageName = package.GetName();
@@ -334,12 +389,16 @@ namespace DiscordIntegration
 #endif
 			}
 		}
+#endif
 
 
 		// Send activity update to Discord
 		discordpp::Activity activity;
 		discordpp::ActivityAssets assets;
-#ifdef SDK_TARGET_LE1
+#ifdef LEASI_GAME_LMP
+		// The name defaults to the LMP application's; the image is an asset uploaded to it.
+		assets.SetLargeImage("lmp");
+#elif defined SDK_TARGET_LE1
 		assets.SetLargeImage("le1");
 		activity.SetName("Mass Effect");
 #elif defined SDK_TARGET_LE2
@@ -352,7 +411,11 @@ namespace DiscordIntegration
 		activity.SetAssets(assets);
 		activity.SetType(discordpp::ActivityTypes::Playing);
 
+#ifdef LEASI_GAME_LMP
+		Lmp::FillActivity(activity);
+#else
 		activity.SetDetails(currentState);
+#endif
 
 		// Update rich presence
 		client->UpdateRichPresence(activity, [](discordpp::ClientResult result) {
@@ -367,70 +430,127 @@ namespace DiscordIntegration
 
 
 #pragma region Credential Storage
-	/// <summary>
-	/// Fetches the user token from Credential Manager
-	/// </summary>
-	/// <returns></returns>
-	char* getUserSecret() {
-		static char credential[256];
+	// Credential blob layout: "<header>\n<accessToken>\n<refreshToken>\n<expiresAt>". Older builds
+	// stored a bare null-terminated access token, which is returned with no refresh token.
+	constexpr std::string_view CREDENTIAL_BLOB_HEADER = "LEASI-DISCORD-2";
 
-		PCREDENTIALW pcred;
-		BOOL ok = ::CredReadW(L"MassEffectLEDiscordIntegration", CRED_TYPE_GENERIC, 0, &pcred);
-		wprintf(L"CredRead() - errno %d\n", ok ? 0 : ::GetLastError());
-		if (!ok) {
-			return nullptr;
+	/// <summary>
+	/// Reads the saved OAuth tokens from Credential Manager.
+	/// </summary>
+	/// <returns>True if a token was found. refreshToken is empty for a token saved by an older build.</returns>
+	bool getStoredTokens(StoredTokens& out) {
+		PCREDENTIALW pcred = nullptr;
+		if (!::CredReadW(CREDENTIAL_TARGET, CRED_TYPE_GENERIC, 0, &pcred)) {
+			DWORD error = ::GetLastError();
+			if (error != ERROR_NOT_FOUND) {
+				LEASI_ERROR("CredReadW() failed - error {}", error);
+			}
+			return false;
 		}
-		wprintf(L"Read secret='%S' (%d bytes)\n", (char*)pcred->CredentialBlob, pcred->CredentialBlobSize);
-		memcpy(credential, pcred->CredentialBlob, pcred->CredentialBlobSize);
+
+		std::string blob;
+		if (pcred->CredentialBlob != nullptr && pcred->CredentialBlobSize <= CRED_MAX_CREDENTIAL_BLOB_SIZE) {
+			blob.assign(reinterpret_cast<const char*>(pcred->CredentialBlob), pcred->CredentialBlobSize);
+		}
 		// Memory allocated by CredRead() must be freed!
 		::CredFree(pcred);
-		return credential;
+
+		out = {};
+
+		// Older builds: a bare access token, written with its null terminator.
+		if (blob.find('\n') == std::string::npos) {
+			const size_t end = blob.find('\0');
+			out.accessToken = blob.substr(0, end);
+			return !out.accessToken.empty();
+		}
+
+		// Split into exactly four newline-separated fields.
+		std::string_view fields[4];
+		std::string_view rest = blob;
+		for (size_t i = 0; i < 4; i++) {
+			const size_t end = i < 3 ? rest.find('\n') : rest.size();
+			if (end == std::string_view::npos) {
+				LEASI_ERROR("Saved Discord credential is malformed, authorization is required.");
+				return false;
+			}
+			fields[i] = rest.substr(0, end);
+			rest.remove_prefix(i < 3 ? end + 1 : end);
+		}
+
+		if (fields[0] != CREDENTIAL_BLOB_HEADER || fields[2].empty()) {
+			LEASI_ERROR("Saved Discord credential is malformed, authorization is required.");
+			return false;
+		}
+
+		out.accessToken = fields[1];
+		out.refreshToken = fields[2];
+		std::from_chars(fields[3].data(), fields[3].data() + fields[3].size(), out.expiresAt);
+		return true;
 	}
 
 	/// <summary>
-	/// Stores a null-terminated secret string in the Windows Credential Manager under the fixed target name "MassEffectLEDiscordIntegration".
+	/// Saves the OAuth tokens in the Windows Credential Manager under CREDENTIAL_TARGET.
 	/// </summary>
-	/// <param name="secret">The user secret</param>
-	void setUserSecret(char* secret) {
-		DWORD cbCreds = 1 + (DWORD) strlen(secret);
+	/// <param name="expiresIn">Seconds until the access token expires, as returned by the token exchange.</param>
+	void storeTokens(const std::string& accessToken, const std::string& refreshToken, int32_t expiresIn) {
+		const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
+		std::string blob = std::format("{}\n{}\n{}\n{}", CREDENTIAL_BLOB_HEADER, accessToken, refreshToken, now + expiresIn);
+		if (blob.size() > CRED_MAX_CREDENTIAL_BLOB_SIZE) {
+			LEASI_ERROR("Discord tokens are too large to save ({} bytes)", blob.size());
+			return;
+		}
 
 		CREDENTIALW cred = { 0 };
 		cred.Type = CRED_TYPE_GENERIC;
-		cred.TargetName = L"MassEffectLEDiscordIntegration";
-		cred.CredentialBlobSize = cbCreds;
-		cred.CredentialBlob = (LPBYTE)secret;
+		cred.TargetName = const_cast<LPWSTR>(CREDENTIAL_TARGET);
+		cred.CredentialBlobSize = static_cast<DWORD>(blob.size());
+		cred.CredentialBlob = reinterpret_cast<LPBYTE>(blob.data());
 		cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
 
-		BOOL ok = ::CredWriteW(&cred, 0);
-		wprintf(L"CredWrite() - errno %d\n", ok ? 0 : ::GetLastError());
+		if (!::CredWriteW(&cred, 0)) {
+			LEASI_ERROR("CredWriteW() failed - error {}", ::GetLastError());
+		}
 	}
 
-	void connectWithSecret(bool refresh) {
-		char* secret = getUserSecret();
-		if (refresh) {
-			client->RefreshToken(
-				APPLICATION_ID, secret,
-				[secret](discordpp::ClientResult result, std::string accessToken,
-					std::string refreshToken,
-					discordpp::AuthorizationTokenType tokenType, int32_t expiresIn,
-					std::string scope) {
-						LEASI_UNUSED_5(accessToken, refreshToken, tokenType, expiresIn, scope);
-						if (!result.Successful()) {
-							LEASI_ERROR("❌ Error refreshing token: {}", result.Error());
-							return;
+	/// <summary>
+	/// Exchanges the refresh token for a new token pair, saves it, and connects with the new access token.
+	/// </summary>
+	void refreshAndConnect(const std::string& refreshToken) {
+		client->RefreshToken(APPLICATION_ID, refreshToken,
+			[](discordpp::ClientResult result, std::string accessToken,
+				std::string newRefreshToken,
+				discordpp::AuthorizationTokenType tokenType, int32_t expiresIn,
+				std::string scope) {
+					LEASI_UNUSED_2(tokenType, scope);
+					if (!result.Successful()) {
+						LEASI_ERROR("Error refreshing Discord token: {}", result.Error());
+						// A rejected refresh token (revoked, or already used) needs a new authorization.
+						// Network failures don't, so don't prompt the user for those.
+						if (result.Type() == discordpp::ErrorType::HTTPError && !result.Retryable()) {
+							beginAuthorization();
 						}
+						return;
+					}
 
-						setUserSecret(secret);
-						connectWithSecret(false); // Re-enter method but don't refresh.
-				}
-			);
-		}
-
-		client->UpdateToken(discordpp::AuthorizationTokenType::Bearer, secret, [](discordpp::ClientResult result) {
-			if (result.Successful()) {
-				LEASI_INFO("Connecting to Discord...");
-				client->Connect();
+					// The old pair is invalidated by the refresh, so save the new one before connecting.
+					storeTokens(accessToken, newRefreshToken, expiresIn);
+					connectWithToken(accessToken);
 			}
+		);
+	}
+
+	/// <summary>
+	/// Hands the access token to the SDK and connects once it has been applied.
+	/// </summary>
+	void connectWithToken(const std::string& accessToken) {
+		client->UpdateToken(discordpp::AuthorizationTokenType::Bearer, accessToken, [](discordpp::ClientResult result) {
+			if (!result.Successful()) {
+				LEASI_ERROR("Error setting Discord token: {}", result.Error());
+				return;
+			}
+			LEASI_INFO("Connecting to Discord...");
+			client->Connect();
 			});
 	}
 #pragma endregion
