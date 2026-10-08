@@ -361,12 +361,46 @@ namespace DebugLogger
 #pragma endregion LogInternal
 
 #pragma region FOutputDevice::Logf
+	// Logs the UnrealScript call chain that a Stack.Logf() came from, starting at the
+	// frame executing the offending opcode. Offsets are relative to the start of each
+	// function's bytecode so they can be matched up in the script editor.
+	void LogScriptStack(FFrame* frame)
+	{
+		constexpr int maxDepth = 64; // PreviousFrame chains are short; this only guards against a corrupt loop
+		for (int depth = 0; frame != nullptr && depth < maxDepth; ++depth, frame = frame->PreviousFrame)
+		{
+			auto const node = frame->Node;
+			auto const functionName = node ? node->GetFullName() : FString(L"<no function>");
+			auto const objectName = frame->Object ? frame->Object->GetFullName() : FString(L"None");
+
+			BYTE const* const scriptStart = node ? node->Script.GetData() : nullptr;
+			BYTE const* const scriptEnd = scriptStart ? scriptStart + node->Script.Count() : nullptr;
+			if (scriptStart != nullptr && frame->Code >= scriptStart && frame->Code <= scriptEnd)
+			{
+				LEASI_INFO(L"\t#{} {} +0x{:04X} (object: {})", depth, functionName, frame->Code - scriptStart, objectName);
+			}
+			else
+			{
+				LEASI_INFO(L"\t#{} {} (object: {})", depth, functionName, objectName);
+			}
+		}
+	}
+
 	tFOutputDeviceLogf* FOutputDeviceLogf_orig = nullptr;
 	void FOutputDeviceLogf_hook(void* unknown, void* serializationFuncPtr, wchar_t* format_str, void* param1, void* param2, void* param3, void* param4)
 	{
-		LEASI_UNUSED_2(unknown, serializationFuncPtr);
+		LEASI_UNUSED(serializationFuncPtr);
 		auto logMessage = FString::Printf(format_str, param1, param2, param3, param4);
 		LEASI_INFO(L"appLogf: {}", logMessage);
+
+		// UObject::execDynArraySort reports a missing comparison delegate via Stack.Logf(),
+		// so the output device here is the FFrame of the script calling array.Sort().
+		// The message alone doesn't say which script that is, so dump the script stack.
+		if (format_str != nullptr && std::wcsncmp(format_str, L"Dynamic array Sort:", 19) == 0)
+		{
+			LEASI_INFO(L"Dynamic array Sort called from script stack:");
+			LogScriptStack(static_cast<FFrame*>(unknown));
+		}
 	}
 
 #pragma endregion FOutputDevice::Logf
