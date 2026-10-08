@@ -32,6 +32,12 @@ namespace ControllerKeyboard
 		const FString& defaultValue
 	);
 
+	// FTickableObject::Tick on the helper's tickable sub-object (at +0x60). The game only ticks it while
+	// bKeyboardVisible is set (IsTickable), and always on the game thread, so keyboard results are delivered here.
+	using t_keyboardTick = void(void* tickable, float deltaTime);
+	extern t_keyboardTick* keyboardTick_orig;
+	void keyboardTick_hook(void* tickable, float deltaTime);
+
 	// For allowing SWF to detect if this ASI is installed
 	using t_asGetIniBool_GetValueImpl = UINT(void* param1, void* param2, FString* param3, FString* param4, FString* param5);
 	extern t_asGetIniBool_GetValueImpl* asGetIniBool_GetValueImpl_orig;

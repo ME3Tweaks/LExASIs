@@ -1,9 +1,23 @@
 #include "Hooks.hpp"
 
+#if defined(CONTROLLERKEYBOARD_HAS_GDK)
 #include <XGameRuntimeInit.h>
 #include <XGameUI.h>
+#include <XTaskQueue.h>
+#endif
+
+#if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
+// Headers only: nothing links steam_api64.lib. The game never ships steam_api64.dll (and it may not be a Steam copy at
+// all), so the Steam keyboard talks to the running Steam client's own steamclient64.dll instead. See SteamKeyboard below.
+#pragma warning(push)
+#pragma warning(disable: 4828)
+#include <steam/steam_api.h>
+#pragma warning(pop)
+#endif
+
+#include <cstdint>
+#include <cwchar>
 #include <new>
-#include <mutex>
 #include <string>
 #include <vector>
 #include <Windows.h>
@@ -11,64 +25,46 @@
 
 namespace
 {
-	XGameUiTextEntryInputScope MapInputScope(Keyboard_Options keyboardType)
-	{
-		switch (keyboardType)
-		{
-		case KEYBOARD_EMAIL:
-			return XGameUiTextEntryInputScope::EmailSmtpAddress;
-		case KEYBOARD_PASSWORD:
-			return XGameUiTextEntryInputScope::Password;
-		case KEYBOARD_CODE:
-			return XGameUiTextEntryInputScope::Number;
-		case KEYBOARD_STANDARD:
-		default:
-			return XGameUiTextEntryInputScope::Default;
-		}
-	}
-
-	bool EnsureGdkInitialized()
-	{
-		static std::once_flag initOnce;
-		static HRESULT initResult = E_FAIL;
-
-		std::call_once(initOnce, []() {
-			initResult = XGameRuntimeInitialize();
-		});
-
-		return SUCCEEDED(initResult);
-	}
+	// ! Shared helpers
+	// ========================================
 
 	std::string FStringToUtf8(const FString& value)
 	{
 		const wchar_t* wide = value.Chars();
-		if (wide == nullptr || wide[0] == L'\0')
+		const int wideLength = static_cast<int>(value.Length());
+		if (wideLength <= 0)
 		{
 			return {};
 		}
 
-		const int wideLength = static_cast<int>(value.Length());
 		const int utf8Length = WideCharToMultiByte(CP_UTF8, 0, wide, wideLength, nullptr, 0, nullptr, nullptr);
 		if (utf8Length <= 0)
 		{
 			return {};
 		}
 
-		std::string utf8;
-		utf8.resize(static_cast<size_t>(utf8Length));
+		std::string utf8(static_cast<size_t>(utf8Length), '\0');
 		WideCharToMultiByte(CP_UTF8, 0, wide, wideLength, utf8.data(), utf8Length, nullptr, nullptr);
 		return utf8;
 	}
 
-	FString Utf8ToFString(const char* utf8)
+	std::wstring Utf8ToWide(const char* utf8)
 	{
-		FString value{};
-		if (utf8 != nullptr && utf8[0] != '\0')
+		if (utf8 == nullptr || utf8[0] == '\0')
 		{
-			value.AppendUtf8(utf8);
+			return {};
 		}
 
-		return value;
+		const int wideLength = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+		if (wideLength <= 1)
+		{
+			return {};
+		}
+
+		std::wstring wide(static_cast<size_t>(wideLength), L'\0');
+		MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wide.data(), wideLength);
+		wide.resize(static_cast<size_t>(wideLength - 1)); // drop the terminator MultiByteToWideChar wrote
+		return wide;
 	}
 
 	FString ResolveLocalizedString(int stringRef, const FString& fallback)
@@ -79,7 +75,7 @@ namespace
 			if (sfxGame != nullptr)
 			{
 				auto localized = sfxGame->GetSimpleString(stringRef, 0);
-				if (localized.Any())
+				if (localized.Length() > 0)
 				{
 					return localized;
 				}
@@ -89,18 +85,431 @@ namespace
 		return fallback;
 	}
 
-	struct KeyboardAsyncContext
+	std::string BuildPrompt(const FString& title, const FString& description)
 	{
-		USFXGUIHelper_ConsoleKeyboard* keyboardHelper = nullptr;
-		XAsyncBlock async{};
+		const std::string titleUtf8 = FStringToUtf8(title);
+		const std::string descriptionUtf8 = FStringToUtf8(description);
+
+		if (titleUtf8.empty())
+		{
+			return descriptionUtf8;
+		}
+
+		if (descriptionUtf8.empty())
+		{
+			return titleUtf8;
+		}
+
+		return titleUtf8 + "\n" + descriptionUtf8;
+	}
+
+	// The console Tick (USFXGUIHelper_ConsoleKeyboard vtable slot 1) strips SFXGUIInputHandler.BannedChars from the
+	// entered text before completing; the PC build compiled that path out, so do it here.
+	std::wstring StripBannedChars(std::wstring text)
+	{
+		UClass* const inputHandlerClass = USFXGUIInputHandler::StaticClass();
+		auto* const defaults = inputHandlerClass != nullptr
+			? static_cast<USFXGUIInputHandler*>(inputHandlerClass->ClassDefaultObject)
+			: nullptr;
+		if (defaults == nullptr || defaults->BannedChars.Length() == 0)
+		{
+			return text;
+		}
+
+		const wchar_t* const banned = defaults->BannedChars.Chars();
+		std::erase_if(text, [banned](wchar_t const c) { return std::wcschr(banned, c) != nullptr; });
+		return text;
+	}
+
+
+	// ! Pending request
+	// ========================================
+	// Only touched on the game thread: DisplayKeyboard starts a request, and both backends complete it from the
+	// helper's Tick (Steam callbacks are polled there, GDK completions are dispatched there).
+
+	struct PendingKeyboard
+	{
+		USFXGUIHelper_ConsoleKeyboard* helper = nullptr;
+		uint32_t id = 0;
+		bool complete = false;
+		bool accepted = false;
+		std::wstring text{};
 	};
+
+	PendingKeyboard g_pending{};
+	uint32_t g_nextRequestId = 1;
+
+	uint32_t BeginRequest(USFXGUIHelper_ConsoleKeyboard* helper)
+	{
+		g_pending = PendingKeyboard{ helper, g_nextRequestId++ };
+		return g_pending.id;
+	}
+
+	void CompleteRequest(uint32_t requestId, bool accepted, std::wstring text)
+	{
+		if (requestId != g_pending.id || g_pending.complete)
+		{
+			return; // A newer request replaced this one.
+		}
+
+		g_pending.complete = true;
+		g_pending.accepted = accepted;
+		g_pending.text = accepted ? std::move(text) : std::wstring{};
+	}
+
+
+#if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
+	// ! Steam keyboard (Big Picture / Steam Deck)
+	// ========================================
+	// This does what SteamAPI_Init does, minus steam_api64.dll: load the running client's steamclient64.dll (the
+	// registry names it), create a pipe, connect to the logged-in user and get ISteamUtils. Callbacks are polled
+	// with Steam_BGetCallback, the same export steam_api's manual dispatch uses.
+	//
+	// Only tried when Steam's overlay is in the process. ShowGamepadTextInput draws in the overlay, so without it
+	// there is nothing to show, and its presence means Steam launched this process.
+	namespace SteamKeyboard
+	{
+		using t_CreateInterface = void*(const char* version, int* returnCode);
+		// Older clients took a third HSteamCall* out-parameter. Passing one is harmless on x64 if it is ignored.
+		using t_BGetCallback = bool(HSteamPipe pipe, CallbackMsg_t* message, int32* call);
+		using t_FreeLastCallback = bool(HSteamPipe pipe);
+
+		// Mass Effect Legendary Edition. The same ID BioWare ships in ME3\Binaries\Win64\steam_appid.txt.
+		constexpr wchar_t k_legendaryEditionAppId[] = L"1328670";
+
+		ISteamClient* g_client = nullptr;
+		ISteamUtils* g_utils = nullptr;
+		HSteamPipe g_pipe = 0;
+		HSteamUser g_user = 0;
+		t_BGetCallback* g_getCallback = nullptr;
+		t_FreeLastCallback* g_freeLastCallback = nullptr;
+		bool g_connectAttempted = false;
+		uint32_t g_requestId = 0;
+
+		bool IsOverlayLoaded()
+		{
+			return GetModuleHandleW(L"gameoverlayrenderer64.dll") != nullptr;
+		}
+
+		HMODULE LoadSteamClient()
+		{
+			if (HMODULE const loaded = GetModuleHandleW(L"steamclient64.dll"); loaded != nullptr)
+			{
+				return loaded;
+			}
+
+			wchar_t path[MAX_PATH]{};
+			DWORD pathSize = sizeof(path);
+			if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam\\ActiveProcess", L"SteamClientDll64",
+				RRF_RT_REG_SZ, nullptr, path, &pathSize) != ERROR_SUCCESS || path[0] == L'\0')
+			{
+				return nullptr;
+			}
+
+			// Altered search path so its own dependencies (tier0_s64.dll etc.) load from the Steam folder.
+			return LoadLibraryExW(path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+		}
+
+		void Disconnect()
+		{
+			if (g_client != nullptr && g_pipe != 0)
+			{
+				if (g_user != 0)
+				{
+					g_client->ReleaseUser(g_pipe, g_user);
+				}
+				g_client->BReleaseSteamPipe(g_pipe);
+			}
+
+			g_client = nullptr;
+			g_utils = nullptr;
+			g_pipe = 0;
+			g_user = 0;
+		}
+
+		bool Connect()
+		{
+			if (g_utils != nullptr)
+			{
+				return true;
+			}
+
+			if (g_connectAttempted || !IsOverlayLoaded())
+			{
+				return false;
+			}
+
+			g_connectAttempted = true;
+
+			// steamclient reads the app ID from the environment, like SteamAPI_Init after it reads steam_appid.txt.
+			// Steam sets it on processes it launches; LMP or a launcher in between may not pass it on.
+			if (GetEnvironmentVariableW(L"SteamAppId", nullptr, 0) == 0)
+			{
+				SetEnvironmentVariableW(L"SteamAppId", k_legendaryEditionAppId);
+			}
+
+			HMODULE const steamClient = LoadSteamClient();
+			if (steamClient == nullptr)
+			{
+				LEASI_WARN("Steam overlay is loaded but steamclient64.dll could not be loaded; using the Windows keyboard");
+				return false;
+			}
+
+			auto* const createInterface = reinterpret_cast<t_CreateInterface*>(GetProcAddress(steamClient, "CreateInterface"));
+			g_getCallback = reinterpret_cast<t_BGetCallback*>(GetProcAddress(steamClient, "Steam_BGetCallback"));
+			g_freeLastCallback = reinterpret_cast<t_FreeLastCallback*>(GetProcAddress(steamClient, "Steam_FreeLastCallback"));
+			if (createInterface == nullptr || g_getCallback == nullptr || g_freeLastCallback == nullptr)
+			{
+				LEASI_WARN("steamclient64.dll is missing expected exports; using the Windows keyboard");
+				return false;
+			}
+
+			g_client = static_cast<ISteamClient*>(createInterface(STEAMCLIENT_INTERFACE_VERSION, nullptr));
+			if (g_client == nullptr)
+			{
+				LEASI_WARN("Steam client does not provide {}; using the Windows keyboard", STEAMCLIENT_INTERFACE_VERSION);
+				return false;
+			}
+
+			g_pipe = g_client->CreateSteamPipe();
+			if (g_pipe != 0)
+			{
+				g_user = g_client->ConnectToGlobalUser(g_pipe);
+			}
+			if (g_user != 0)
+			{
+				g_utils = g_client->GetISteamUtils(g_pipe, STEAMUTILS_INTERFACE_VERSION);
+			}
+
+			if (g_utils == nullptr)
+			{
+				LEASI_WARN("Could not connect to the Steam user; using the Windows keyboard");
+				Disconnect();
+				return false;
+			}
+
+			LEASI_INFO("Connected to Steam for the gamepad keyboard");
+			return true;
+		}
+
+		bool Show(uint32_t requestId, Keyboard_Options keyboardType, uint32_t maxTextLength, const std::string& prompt, const std::string& defaultText)
+		{
+			if (!Connect())
+			{
+				return false;
+			}
+
+			// Returns false unless the overlay can show it (Big Picture, Steam Deck).
+			const bool shown = g_utils->ShowGamepadTextInput(
+				keyboardType == KEYBOARD_PASSWORD ? k_EGamepadTextInputModePassword : k_EGamepadTextInputModeNormal,
+				k_EGamepadTextInputLineModeSingleLine,
+				prompt.c_str(),
+				maxTextLength,
+				defaultText.c_str());
+
+			if (shown)
+			{
+				g_requestId = requestId;
+			}
+
+			return shown;
+		}
+
+		void Pump()
+		{
+			if (g_utils == nullptr)
+			{
+				return;
+			}
+
+			bool dismissed = false;
+			bool submitted = false;
+
+			CallbackMsg_t message{};
+			int32 call = 0;
+			while (g_getCallback(g_pipe, &message, &call))
+			{
+				if (message.m_iCallback == GamepadTextInputDismissed_t::k_iCallback
+					&& message.m_cubParam >= static_cast<int>(sizeof(GamepadTextInputDismissed_t)))
+				{
+					dismissed = true;
+					submitted = reinterpret_cast<GamepadTextInputDismissed_t const*>(message.m_pubParam)->m_bSubmitted;
+				}
+
+				g_freeLastCallback(g_pipe);
+			}
+
+			if (!dismissed)
+			{
+				return;
+			}
+
+			std::wstring text{};
+			if (submitted)
+			{
+				// Length includes the terminator.
+				const uint32 length = g_utils->GetEnteredGamepadTextLength();
+				std::vector<char> buffer(static_cast<size_t>(length) + 1, '\0');
+				if (length > 0 && g_utils->GetEnteredGamepadTextInput(buffer.data(), static_cast<uint32>(buffer.size())))
+				{
+					text = Utf8ToWide(buffer.data());
+				}
+			}
+
+			CompleteRequest(g_requestId, submitted, std::move(text));
+		}
+	}
+#endif
+
+
+#if defined(CONTROLLERKEYBOARD_HAS_GDK)
+	// ! Windows keyboard (GDK text entry)
+	// ========================================
+	// XGameUiShowTextEntryAsync opens a separate text entry window; Windows adds its touch keyboard only when the
+	// user is set up for one (tablet mode etc.). Completions go to a queue with a manual completion port that is
+	// dispatched from the helper's Tick, so they run on the game thread instead of a thread-pool thread.
+	namespace GdkKeyboard
+	{
+		XTaskQueueHandle g_queue = nullptr;
+		bool g_initAttempted = false;
+
+		struct AsyncContext
+		{
+			XAsyncBlock async{};
+			uint32_t requestId = 0;
+		};
+
+		bool EnsureInitialized()
+		{
+			if (!g_initAttempted)
+			{
+				g_initAttempted = true;
+
+				HRESULT hr = XGameRuntimeInitialize();
+				if (SUCCEEDED(hr))
+				{
+					hr = XTaskQueueCreate(XTaskQueueDispatchMode::ThreadPool, XTaskQueueDispatchMode::Manual, &g_queue);
+				}
+
+				if (FAILED(hr))
+				{
+					g_queue = nullptr;
+					LEASI_WARN("Gaming Runtime unavailable (0x{:08X}); the Windows keyboard is disabled", static_cast<uint32_t>(hr));
+				}
+			}
+
+			return g_queue != nullptr;
+		}
+
+		void CALLBACK OnTextEntryComplete(XAsyncBlock* async)
+		{
+			auto* const context = static_cast<AsyncContext*>(async->context);
+
+			bool accepted = false;
+			std::wstring text{};
+			if (SUCCEEDED(XAsyncGetStatus(async, false)))
+			{
+				uint32_t resultSize = 0;
+				if (SUCCEEDED(XGameUiShowTextEntryResultSize(async, &resultSize)))
+				{
+					std::vector<char> buffer(static_cast<size_t>(resultSize) + 1, '\0');
+					uint32_t resultUsed = 0;
+					if (SUCCEEDED(XGameUiShowTextEntryResult(async, resultSize, buffer.data(), &resultUsed)))
+					{
+						text = Utf8ToWide(buffer.data());
+						accepted = true;
+					}
+				}
+			}
+
+			CompleteRequest(context->requestId, accepted, std::move(text));
+			delete context;
+		}
+
+		bool Show(uint32_t requestId, Keyboard_Options keyboardType, uint32_t maxTextLength, const std::string& title, const std::string& description, const std::string& defaultText)
+		{
+			if (!EnsureInitialized())
+			{
+				return false;
+			}
+
+			XGameUiTextEntryInputScope inputScope = XGameUiTextEntryInputScope::Default;
+			switch (keyboardType)
+			{
+			case KEYBOARD_EMAIL:
+				inputScope = XGameUiTextEntryInputScope::EmailSmtpAddress;
+				break;
+			case KEYBOARD_PASSWORD:
+				inputScope = XGameUiTextEntryInputScope::Password;
+				break;
+			case KEYBOARD_CODE:
+				inputScope = XGameUiTextEntryInputScope::Number;
+				break;
+			default:
+				break;
+			}
+
+			auto* const context = new (std::nothrow) AsyncContext{};
+			if (context == nullptr)
+			{
+				return false;
+			}
+
+			context->requestId = requestId;
+			context->async.queue = g_queue;
+			context->async.context = context;
+			context->async.callback = OnTextEntryComplete;
+
+			const HRESULT hr = XGameUiShowTextEntryAsync(
+				&context->async,
+				title.empty() ? nullptr : title.c_str(),
+				description.empty() ? nullptr : description.c_str(),
+				defaultText.empty() ? nullptr : defaultText.c_str(),
+				inputScope,
+				maxTextLength);
+
+			if (FAILED(hr))
+			{
+				LEASI_WARN("XGameUiShowTextEntryAsync failed (0x{:08X})", static_cast<uint32_t>(hr));
+				delete context;
+				return false;
+			}
+
+			return true;
+		}
+
+		void Pump()
+		{
+			if (g_queue != nullptr)
+			{
+				while (XTaskQueueDispatch(g_queue, XTaskQueuePort::Completion, 0))
+				{
+				}
+			}
+		}
+	}
+#endif
+
+	bool IsAnyKeyboardAvailable()
+	{
+#if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
+		if (SteamKeyboard::IsOverlayLoaded())
+		{
+			return true;
+		}
+#endif
+#if defined(CONTROLLERKEYBOARD_HAS_GDK)
+		if (GdkKeyboard::EnsureInitialized())
+		{
+			return true;
+		}
+#endif
+		return false;
+	}
 }
 
 namespace ControllerKeyboard
 {
-	// ! Global variables
-	// ========================================
-
 	// ! ASGetIniBool::GetValueImpl Hook
 	// ========================================
 	// We hook this so we can ask for values in an ini
@@ -114,17 +523,17 @@ namespace ControllerKeyboard
 		if (section->Equals(L"Engine.ASIMods") && key->Equals(L"ControllerKeyboard")) // We don't check the filename, we don't really care
 		{
 			uintptr_t* pRetVal = *(uintptr_t**)param2; // dereference Params* to get pRetVal (GFxValue*)
-			*(bool*)(pRetVal + 2) = true;        // the actual bool value
+			*(bool*)(pRetVal + 2) = IsAnyKeyboardAvailable(); // the actual bool value
 			*(uint32_t*)(pRetVal + 1) = 2;       // GFxValue type tag = Bool
-			return true; // Todo: Ensure keyboard is actually available.
+			return true;
 		}
 		return asGetIniBool_GetValueImpl_orig(param1, param2, filename, section, key);
 	}
 
 	// ! DisplayKeyboard Hook
 	// ========================================
-	// We completely replace this logic because the original function just throws an error and completes input immediately;
-	// obviously we want an actual keyboard to appear.
+	// The PC build of this native immediately completes with EntryOK=0 ("Keyboard Interface Not Available On PC").
+	// We show the Steam keyboard if we can, else the Windows one, and only fall back to that stub if neither shows.
 	t_displayKeyboard* displayKeyboard_orig = nullptr;
 
 	void displayKeyboard_hook(
@@ -138,93 +547,70 @@ namespace ControllerKeyboard
 	{
 		if (self == nullptr || OnKeyboardEntryComplete == nullptr)
 		{
-			return;
-		}
-
-		self->bKeyboardVisible = true;
-
-		if (!EnsureGdkInitialized())
-		{
-			self->bKeyboardVisible = false;
-			FString result{};
-			OnKeyboardEntryComplete(self, 0, &result);
+			displayKeyboard_orig(self, srTitle, srDescription, keyboardType, maxLength, defaultValue);
 			return;
 		}
 
 		const FString localizedTitle = ResolveLocalizedString(srTitle, self->sTitle);
 		const FString localizedDescription = ResolveLocalizedString(srDescription, self->sDescription);
-
-		const std::string titleUtf8 = FStringToUtf8(localizedTitle);
-		const std::string descriptionUtf8 = FStringToUtf8(localizedDescription);
+		const uint32_t maxTextLength = maxLength > 0 ? static_cast<uint32_t>(maxLength) : 1024U;
 		const std::string defaultUtf8 = FStringToUtf8(defaultValue);
 
-		const char* title = titleUtf8.empty() ? nullptr : titleUtf8.c_str();
-		const char* description = descriptionUtf8.empty() ? nullptr : descriptionUtf8.c_str();
-		const char* defaultText = defaultUtf8.empty() ? nullptr : defaultUtf8.c_str();
+		const uint32_t requestId = BeginRequest(self);
+		bool shown = false;
 
-		const uint32_t maxTextLength = maxLength > 0 ? static_cast<uint32_t>(maxLength) : 1024U;
-
-		auto* asyncContext = new (std::nothrow) KeyboardAsyncContext{};
-		if (asyncContext == nullptr)
+#if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
+		shown = SteamKeyboard::Show(requestId, keyboardType, maxTextLength, BuildPrompt(localizedTitle, localizedDescription), defaultUtf8);
+#endif
+#if defined(CONTROLLERKEYBOARD_HAS_GDK)
+		if (!shown)
 		{
-			self->bKeyboardVisible = false;
-			FString result{};
-			OnKeyboardEntryComplete(self, 0, &result);
+			shown = GdkKeyboard::Show(requestId, keyboardType, maxTextLength,
+				FStringToUtf8(localizedTitle), FStringToUtf8(localizedDescription), defaultUtf8);
+		}
+#endif
+
+		if (!shown)
+		{
+			BeginRequest(nullptr); // invalidate
+			displayKeyboard_orig(self, srTitle, srDescription, keyboardType, maxLength, defaultValue);
 			return;
 		}
 
-		asyncContext->keyboardHelper = self;
-		asyncContext->async.context = asyncContext;
-		asyncContext->async.queue = nullptr;
-		asyncContext->async.callback = [](XAsyncBlock* async)
+		// Makes the game tick the helper (IsTickable returns this bit), which is where the result is delivered.
+		self->bKeyboardVisible = true;
+	}
+
+	// ! FTickableObject::Tick Hook
+	// ========================================
+	t_keyboardTick* keyboardTick_orig = nullptr;
+
+	void keyboardTick_hook(void* tickable, float deltaTime)
+	{
+		keyboardTick_orig(tickable, deltaTime);
+
+#if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
+		SteamKeyboard::Pump();
+#endif
+#if defined(CONTROLLERKEYBOARD_HAS_GDK)
+		GdkKeyboard::Pump();
+#endif
+
+		// The FTickableObject sub-object (VfTable_FTickableObject) sits at +0x60 in USFXGUIHelper_ConsoleKeyboard.
+		auto* const self = reinterpret_cast<USFXGUIHelper_ConsoleKeyboard*>(static_cast<char*>(tickable) - 0x60);
+		if (g_pending.helper != self || !g_pending.complete)
 		{
-			auto* context = static_cast<KeyboardAsyncContext*>(async->context);
-			FString result{};
-			int inputAccepted = 0;
-
-			if (SUCCEEDED(XAsyncGetStatus(async, false)))
-			{
-				uint32_t resultBufferSize = 0;
-				if (SUCCEEDED(XGameUiShowTextEntryResultSize(async, &resultBufferSize)) && resultBufferSize > 0)
-				{
-					std::vector<char> resultBuffer(resultBufferSize, '\0');
-					uint32_t resultBufferUsed = 0;
-					if (SUCCEEDED(XGameUiShowTextEntryResult(async, resultBufferSize, resultBuffer.data(), &resultBufferUsed)))
-					{
-						result = Utf8ToFString(resultBuffer.data());
-						inputAccepted = 1;
-					}
-				}
-			}
-
-			if (context->keyboardHelper != nullptr)
-			{
-				context->keyboardHelper->bKeyboardVisible = false;
-				if (OnKeyboardEntryComplete != nullptr)
-				{
-					OnKeyboardEntryComplete(context->keyboardHelper, inputAccepted, &result);
-				}
-			}
-
-			delete context;
-		};
-
-		const HRESULT openResult = XGameUiShowTextEntryAsync(
-			&asyncContext->async,
-			title,
-			description,
-			defaultText,
-			MapInputScope(keyboardType),
-			maxTextLength
-		);
-
-		if (FAILED(openResult))
-		{
-			delete asyncContext;
-			self->bKeyboardVisible = false;
-			FString result{};
-			OnKeyboardEntryComplete(self, 0, &result);
+			return;
 		}
+
+		// Clear first: the delegate may open another keyboard.
+		const bool accepted = g_pending.accepted;
+		const std::wstring text = StripBannedChars(std::move(g_pending.text));
+		g_pending = PendingKeyboard{};
+
+		FString entered{ text.c_str() };
+		self->bKeyboardVisible = false;
+		OnKeyboardEntryComplete(self, accepted ? 1 : 0, &entered);
 	}
 
 	// + OnKeyboardEntryComplete

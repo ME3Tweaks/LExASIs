@@ -14,25 +14,27 @@
 #define ASI_NAME_NO_SPACE_W L"ControllerKeyboard"
 
 
-#define ASI_VERSION 4
+#define ASI_VERSION 5
 // String that appears in the file description and part of SPI
-#define ASI_DESCRIPTION "Controller Keyboard ASI enables the game to show the Windows virtual keyboard when trying to do input via touch or gamepad."
+#define ASI_DESCRIPTION "Controller Keyboard ASI enables the game to show the Steam gamepad keyboard (or the Windows text entry UI) when trying to do input via touch or gamepad."
 
 
 // === Identification from automated ME3Tweaks tooling ====
-#if defined(SDK_TARGET_LE1)
+// LEASI_GAME_LMP is checked first: LMP builds against the LE3 SDK (SDK_TARGET_LE3
+// is also defined in that case), but needs its own identity here.
+#if defined(LEASI_GAME_LMP)
+#define GAME_PREFIX_RC    "LMP"
+#define ASI_GROUP_ID_RC 0
+#define ASI_GAME_ID_RC 8
+#elif defined(SDK_TARGET_LE1)
 #define GAME_PREFIX_RC    "LE1"
 #define ASI_GROUP_ID_RC 0
 #define ASI_GAME_ID_RC 4
-#endif
-
-#if defined(SDK_TARGET_LE2)
+#elif defined(SDK_TARGET_LE2)
 #define GAME_PREFIX_RC    "LE2"
 #define ASI_GROUP_ID_RC 0
 #define ASI_GAME_ID_RC 5
-#endif
-
-#if defined(SDK_TARGET_LE3)
+#elif defined(SDK_TARGET_LE3)
 #define GAME_PREFIX_RC    "LE3"
 #define ASI_GROUP_ID_RC 0
 #define ASI_GAME_ID_RC 6
