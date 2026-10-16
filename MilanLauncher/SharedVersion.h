@@ -40,7 +40,7 @@
 
 #if defined(SDK_TARGET_LEL)
 #define GAME_PREFIX_RC    "LEL"
-#define ASI_GROUP_ID_RC 0
+#define ASI_GROUP_ID_RC 
 #define ASI_GAME_ID_RC 7
 #endif
 
