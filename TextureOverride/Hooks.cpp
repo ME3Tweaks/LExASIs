@@ -140,6 +140,35 @@ namespace TextureOverride
 	bool bHasPerformedDLCTFCRegistration = false;
 	void** GFileManager = nullptr;
 
+#if defined(LEASI_GAME_LMP)
+	// LMP TFCs use TFC Compactor's BAeName#_DLC_MOD_NAME.tfc format, which the older TO ASI didn't follow
+	// so right now this only will properly work with LMP
+	static bool IsSupportedLmpTfcName(std::wstring_view const FileName, std::wstring_view const DlcName)
+	{
+		std::wstring const Suffix = std::format(L"_{}.tfc", DlcName);
+		if (FileName.size() <= Suffix.size() || wcsicmp(FileName.substr(FileName.size() - Suffix.size()).data(), Suffix.c_str()) != 0)
+		{
+			// Name too short or doesn't end with the DLC name suffix
+			return false;
+		}
+		std::wstring_view Stem = FileName.substr(0, FileName.size() - Suffix.size());
+		for (std::wstring_view const Prefix : { L"Textures", L"Lighting", L"CharTextures" })
+		{
+			// Check stem is at least as long as the prefix and starts with it (case-insensitive)
+			if (Stem.size() < Prefix.size() || _wcsnicmp(Stem.data(), Prefix.data(), Prefix.size()) != 0)
+				continue;
+
+			std::wstring_view const Index = Stem.substr(Prefix.size());
+			// Indexes 2-9 are allowed, 1 is the original, we don't use 0.
+			if (std::all_of(Index.begin(), Index.end(), [](wchar_t const c) { return c >= L'2' && c <= L'9'; }))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+#endif
+
 	void RegisterDLCTFCs() {
 		// List DLC_MOD_ folders
 		const wchar_t* searchPath = L"..\\..\\BIOGame\\DLC\\DLC_MOD_*";
@@ -155,7 +184,11 @@ namespace TextureOverride
 			auto dlcCookedPath = dlcPath / dlcName.Chars() / L"CookedPCConsole";
 			if (std::filesystem::exists(dlcCookedPath)) {
 				// Find *.tfc files in the cookedpcconsole folder
-#if defined(SDK_TARGET_LE3)
+#if defined(LEASI_GAME_LMP)
+				// LMP: <Prefix>[N]_DLC_MOD_XXX.tfc, validated per file below
+				std::wstring tfcNamePattern = std::format(L"*_{}.tfc", dlcName.Chars());
+				auto tfcSearchPattern = dlcCookedPath / tfcNamePattern;
+#elif defined(SDK_TARGET_LE3)
 				// LE3 DLC requires Textures_DLC_MOD_XXX so we keep that same requirement here as a prefix
 				// 02/22/2026 - Also support Lighting_, CharTextures_
 				std::wstring tfcNamePattern = std::format(L"*_{}*.tfc", dlcName.Chars());
@@ -170,7 +203,14 @@ namespace TextureOverride
 				for (unsigned int k = 0; k < tfcFiles.Count(); k++) {
 
 					// Register each TFC using full path
-#if defined (SDK_TARGET_LE3)
+#if defined(LEASI_GAME_LMP)
+					auto tfcName = tfcFiles.GetData()[k];
+					if (!IsSupportedLmpTfcName(tfcName.Chars(), dlcName.Chars())) {
+						LEASI_WARN(L"Skipping registration of unsupported DLC mod TFC name: {}", tfcName.Chars());
+						continue;
+					}
+					auto fullTfcPath = dlcCookedPath / tfcName.Chars();
+#elif defined (SDK_TARGET_LE3)
 					auto tfcName = tfcFiles.GetData()[k];
 					if (!tfcName.StartsWith(L"Textures_DLC_") && !tfcName.StartsWith(L"Lighting_DLC_") && !tfcName.StartsWith(L"CharTextures_DLC_")) {
 						// Not a supported TFC name
