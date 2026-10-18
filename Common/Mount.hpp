@@ -37,7 +37,7 @@ namespace Common
 #if defined(SDK_TARGET_LE3)
     struct LE3MountPartial
     {
-        uint32_t        Unknown0;       // 1
+        uint32_t        Unknown0;       // 1 LE3 8 LMP
         uint32_t        VerPackage;     // 685
         uint32_t        VerLicensee;    // 205
         uint32_t        VerCook;        // 196715
