@@ -146,7 +146,7 @@ namespace TextureOverride
 	static bool IsSupportedLmpTfcName(std::wstring_view const FileName, std::wstring_view const DlcName)
 	{
 		std::wstring const Suffix = std::format(L"_{}.tfc", DlcName);
-		if (FileName.size() <= Suffix.size() || wcsicmp(FileName.substr(FileName.size() - Suffix.size()).data(), Suffix.c_str()) != 0)
+		if (FileName.size() <= Suffix.size() || _wcsicmp(FileName.substr(FileName.size() - Suffix.size()).data(), Suffix.c_str()) != 0)
 		{
 			// Name too short or doesn't end with the DLC name suffix
 			return false;
