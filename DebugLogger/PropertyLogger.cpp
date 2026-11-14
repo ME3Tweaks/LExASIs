@@ -4,22 +4,30 @@
 namespace DebugLogger {
 
 #define SCRIPTOBJECTFULLPATH(objPtr) (objPtr ? objPtr->GetFullPath().Chars() : L"None")
-#define PRINTALLELEMENTS(type, printStmnt) auto value = *reinterpret_cast<type*>(propAddr); \
-											if (prop->ArrayDim > 1) \
+#define PRINTALLELEMENTS(type, printStmnt) if (prop->ArrayDim > 1) \
 											{ \
-												logFile << "[" << prop->ArrayDim << "] : [" << printStmnt; \
-												for (int i = prop->ArrayDim - 1; i > 0; --i) \
+												logFile << "[" << prop->ArrayDim << "] : ["; \
+												for (int elemIdx = 0; elemIdx < prop->ArrayDim; ++elemIdx) \
 												{ \
-													propAddr += prop->ElementSize; \
-													value = *reinterpret_cast<type*>(propAddr); \
-													logFile << ", " << printStmnt; \
+													const type& value = *reinterpret_cast<const type*>(propAddr + elemIdx * prop->ElementSize); \
+													if (elemIdx > 0) \
+													{ \
+														logFile << ", "; \
+													} \
+													logFile << printStmnt; \
 												} \
 												logFile << "]\n"; \
 											} \
 											else \
 											{ \
+												const type& value = *reinterpret_cast<const type*>(propAddr); \
 												logFile << ": " << printStmnt << "\n"; \
-											} \
+											}
+
+	// Sanity check
+	static constexpr UINT k_maxSaneArrayCount = 1u << 20;
+	// Max entries to print so we don't print huge list
+	static constexpr UINT k_maxPrintedArrayElements = 64;
 
 	void PropertyLogger::IncreaseIndent()
 	{
@@ -64,7 +72,6 @@ namespace DebugLogger {
 
 	void PropertyLogger::PrintPropertyValues(BYTE* propsOffset, UStruct* const node, FFrame::FOutParmRec* outParmInfo)
 	{
-		BYTE* propAddr = nullptr;
 		IncreaseIndent();
 		for (auto curChild = node->Children; curChild; curChild = curChild->Next)
 		{
@@ -78,6 +85,9 @@ namespace DebugLogger {
 			{
 				continue;
 			}
+
+			// Reset per loop
+			BYTE* propAddr = nullptr;
 			if (prop->PropertyFlags & 0x100) //OutParm flag
 			{
 				for (auto curOutParm = outParmInfo; curOutParm; curOutParm = curOutParm->NextOutParm)
@@ -137,90 +147,97 @@ namespace DebugLogger {
 				}
 				else if (propClass == UArrayProperty::StaticClass())
 				{
-					auto array = *reinterpret_cast<TArray<BYTE>*>(propAddr);
+					auto& array = *reinterpret_cast<TArrayView<BYTE>*>(propAddr);
 					auto array_property = static_cast<UArrayProperty*>(prop);
-					prop = array_property->Inner;
-					propClass = prop->Class;
-					indent();
-					logFile << ": " << array.Count() << " Elements ";
-					logFile << "[";
-					propAddr = array.GetData();
-					if (propClass == UStructProperty::StaticClass())
+					auto innerProp = array_property->Inner;
+					auto innerClass = innerProp->Class;
+					const UINT count = array.Count();
+					if (count > array.Capacity() || count > k_maxSaneArrayCount || (count > 0 && array.GetData() == nullptr))
 					{
-						auto uStruct = static_cast<UStructProperty*>(prop)->Struct;
-						logFile << " : ( StructType: " << uStruct->GetName() << ") [\n";
-						for (UINT i = 0; i < array.Count(); ++i)
+						logFile << ": [invalid array header - Count " << count << ", Max " << array.Capacity() << "]\n";
+						return;
+					}
+					const UINT printCount = count < k_maxPrintedArrayElements ? count : k_maxPrintedArrayElements;
+					logFile << ": " << count << " Elements [";
+					BYTE* elemAddr = array.GetData();
+					if (innerClass == UStructProperty::StaticClass())
+					{
+						auto uStruct = static_cast<UStructProperty*>(innerProp)->Struct;
+						logFile << " ( StructType: " << uStruct->GetName() << ") [\n";
+						for (UINT i = 0; i < printCount; ++i)
 						{
 							if (i > 0)
 							{
 								indent();
 								logFile << ",\n";
 							}
-							PrintPropertyValues(propAddr, uStruct);
-							propAddr += prop->ElementSize;
+							PrintPropertyValues(elemAddr, uStruct);
+							elemAddr += innerProp->ElementSize;
+						}
+						if (printCount < count)
+						{
+							indent();
+							logFile << "... " << (count - printCount) << " more\n";
 						}
 						indent();
 						logFile << "]\n";
 					}
 					else
 					{
-						for (UINT i = 0; i < array.Count(); ++i)
+						for (UINT i = 0; i < printCount; ++i)
 						{
 							if (i > 0)
 							{
 								logFile << ", ";
 							}
-							if (propClass == UIntProperty::StaticClass())
+							if (innerClass == UIntProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<int*>(propAddr);
-								logFile << value;
+								logFile << *reinterpret_cast<const int*>(elemAddr);
 							}
-							else if (propClass == UFloatProperty::StaticClass())
+							else if (innerClass == UFloatProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<float*>(propAddr);
-								logFile << value;
+								logFile << *reinterpret_cast<const float*>(elemAddr);
 							}
-							else if (propClass == UByteProperty::StaticClass())
+							else if (innerClass == UByteProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<BYTE*>(propAddr);
-								logFile << static_cast<int>(value);
+								logFile << static_cast<int>(*reinterpret_cast<const BYTE*>(elemAddr));
 							}
-							else if (propClass == UBoolProperty::StaticClass())
+							else if (innerClass == UBoolProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<unsigned*>(propAddr);
-								logFile << (value ? "True" : "False");
+								logFile << (*reinterpret_cast<const unsigned*>(elemAddr) ? "True" : "False");
 							}
-							else if (propClass == UNameProperty::StaticClass())
+							else if (innerClass == UNameProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<SFXName*>(propAddr);
-								logFile << value.Instanced();
+								logFile << reinterpret_cast<const SFXName*>(elemAddr)->Instanced();
 							}
-							else if (propClass == UStrProperty::StaticClass())
+							else if (innerClass == UStrProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<FString*>(propAddr);
-								logFile << "\"" << value << "\""; // Used to have a null check here
+								logFile << "\"" << *reinterpret_cast<const FString*>(elemAddr) << "\""; // Used to have a null check here
 							}
-							else if (propClass == UStringRefProperty::StaticClass())
+							else if (innerClass == UStringRefProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<int*>(propAddr);
-								logFile << "$" << value;
+								logFile << "$" << *reinterpret_cast<const int*>(elemAddr);
 							}
-							else if (propClass == UDelegateProperty::StaticClass())
+							else if (innerClass == UDelegateProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<FScriptDelegate*>(propAddr);
+								const auto& value = *reinterpret_cast<const FScriptDelegate*>(elemAddr);
 								logFile << "(Function Name:" << value.FunctionName.ToString(SFXName::FormatMode::k_formatInstanced) << ", Object: " << SCRIPTOBJECTFULLPATH(value.Object) << ")";
 							}
-							else if (propClass == UInterfaceProperty::StaticClass())
+							else if (innerClass == UInterfaceProperty::StaticClass())
 							{
-								auto value = *reinterpret_cast<FScriptInterface*>(propAddr);
+								const auto& value = *reinterpret_cast<const FScriptInterface*>(elemAddr);
 								logFile << SCRIPTOBJECTFULLPATH(value.Object);
 							}
-							else if (prop->IsA(UObjectProperty::StaticClass()))
+							else if (innerProp->IsA(UObjectProperty::StaticClass()))
 							{
-								auto value = *reinterpret_cast<UObject**>(propAddr);
+								UObject* value = *reinterpret_cast<UObject* const*>(elemAddr);
 								logFile << SCRIPTOBJECTFULLPATH(value);
 							}
-							propAddr += prop->ElementSize;
+							elemAddr += innerProp->ElementSize;
+						}
+						if (printCount < count)
+						{
+							logFile << ", ... " << (count - printCount) << " more";
 						}
 						logFile << "]\n";
 					}
@@ -236,17 +253,19 @@ namespace DebugLogger {
 				else if (propClass == UStructProperty::StaticClass())
 				{
 					auto uStruct = static_cast<UStructProperty*>(prop)->Struct;
-					// ``auto value = reinterpret_cast<UStructProperty*>(propAddr);
 					if (prop->ArrayDim > 1)
 					{
 						logFile << "[" << prop->ArrayDim << "] : ( StructType: " << uStruct->GetName() << ") [\n";
-						PrintPropertyValues(propAddr, uStruct);
-						for (int i = prop->ArrayDim - 1; i > 0; --i)
+						BYTE* elemAddr = propAddr;
+						for (int i = 0; i < prop->ArrayDim; ++i)
 						{
-							indent();
-							logFile << ",\n";
-							propAddr += prop->ElementSize;
-							PrintPropertyValues(propAddr, uStruct);
+							if (i > 0)
+							{
+								indent();
+								logFile << ",\n";
+							}
+							PrintPropertyValues(elemAddr, uStruct);
+							elemAddr += prop->ElementSize;
 						}
 						indent();
 						logFile << "]\n";
@@ -266,7 +285,7 @@ namespace DebugLogger {
 			{
 				logFile << " [ERROR: Access violation - corrupt or invalid memory, may be issue in ASI and not the game]\n";
 			}
-			DecreaseIndent();
 		}
+		DecreaseIndent();
 	}
 }
