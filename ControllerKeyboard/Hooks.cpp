@@ -3,7 +3,6 @@
 #if defined(CONTROLLERKEYBOARD_HAS_GDK)
 #include <XGameRuntimeInit.h>
 #include <XGameUI.h>
-#include <XTaskQueue.h>
 #endif
 
 #if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
@@ -17,6 +16,8 @@
 
 #include <cstdint>
 #include <cwchar>
+#include <iterator>
+#include <mutex>
 #include <new>
 #include <string>
 #include <vector>
@@ -186,9 +187,21 @@ namespace
 		bool g_connectAttempted = false;
 		uint32_t g_requestId = 0;
 
-		bool IsOverlayLoaded()
+		bool IsEnvironmentFlagSet(const wchar_t* name)
 		{
-			return GetModuleHandleW(L"gameoverlayrenderer64.dll") != nullptr;
+			wchar_t value[8]{};
+			const DWORD length = GetEnvironmentVariableW(name, value, static_cast<DWORD>(std::size(value)));
+			return length > 0 && length < std::size(value) && value[0] == L'1';
+		}
+
+		// ShowGamepadTextInput only works in Big Picture or on Steam Deck, and needs the overlay in this process.
+		// Steam sets SteamTenfoot=1 on processes it launches from Big Picture and SteamDeck=1 on Deck. Outside those,
+		// don't connect at all: registering this process with Steam (ConnectToGlobalUser) when its keyboard can't
+		// show anyway is the prime suspect for controller input not reaching the Windows text entry window.
+		bool CanShowKeyboard()
+		{
+			return GetModuleHandleW(L"gameoverlayrenderer64.dll") != nullptr
+				&& (IsEnvironmentFlagSet(L"SteamTenfoot") || IsEnvironmentFlagSet(L"SteamDeck"));
 		}
 
 		HMODULE LoadSteamClient()
@@ -234,7 +247,7 @@ namespace
 				return true;
 			}
 
-			if (g_connectAttempted || !IsOverlayLoaded())
+			if (g_connectAttempted || !CanShowKeyboard())
 			{
 				return false;
 			}
@@ -366,12 +379,13 @@ namespace
 	// ! Windows keyboard (GDK text entry)
 	// ========================================
 	// XGameUiShowTextEntryAsync opens a separate text entry window; Windows adds its touch keyboard only when the
-	// user is set up for one (tablet mode etc.). Completions go to a queue with a manual completion port that is
-	// dispatched from the helper's Tick, so they run on the game thread instead of a thread-pool thread.
+	// user is set up for one (tablet mode etc.). This uses the default process queue like the original GDK-only
+	// version did, so the completion callback runs on a thread-pool thread. It only queues the result; Pump hands
+	// it over from the helper's Tick, on the game thread.
 	namespace GdkKeyboard
 	{
-		XTaskQueueHandle g_queue = nullptr;
 		bool g_initAttempted = false;
+		bool g_ready = false;
 
 		struct AsyncContext
 		{
@@ -379,34 +393,38 @@ namespace
 			uint32_t requestId = 0;
 		};
 
+		struct Result
+		{
+			uint32_t requestId = 0;
+			bool accepted = false;
+			std::wstring text{};
+		};
+
+		std::mutex g_resultsMutex{};
+		std::vector<Result> g_results{};
+
 		bool EnsureInitialized()
 		{
 			if (!g_initAttempted)
 			{
 				g_initAttempted = true;
 
-				HRESULT hr = XGameRuntimeInitialize();
-				if (SUCCEEDED(hr))
+				const HRESULT hr = XGameRuntimeInitialize();
+				g_ready = SUCCEEDED(hr);
+				if (!g_ready)
 				{
-					hr = XTaskQueueCreate(XTaskQueueDispatchMode::ThreadPool, XTaskQueueDispatchMode::Manual, &g_queue);
-				}
-
-				if (FAILED(hr))
-				{
-					g_queue = nullptr;
 					LEASI_WARN("Gaming Runtime unavailable (0x{:08X}); the Windows keyboard is disabled", static_cast<uint32_t>(hr));
 				}
 			}
 
-			return g_queue != nullptr;
+			return g_ready;
 		}
 
 		void CALLBACK OnTextEntryComplete(XAsyncBlock* async)
 		{
 			auto* const context = static_cast<AsyncContext*>(async->context);
 
-			bool accepted = false;
-			std::wstring text{};
+			Result result{ context->requestId };
 			if (SUCCEEDED(XAsyncGetStatus(async, false)))
 			{
 				uint32_t resultSize = 0;
@@ -416,14 +434,16 @@ namespace
 					uint32_t resultUsed = 0;
 					if (SUCCEEDED(XGameUiShowTextEntryResult(async, resultSize, buffer.data(), &resultUsed)))
 					{
-						text = Utf8ToWide(buffer.data());
-						accepted = true;
+						result.text = Utf8ToWide(buffer.data());
+						result.accepted = true;
 					}
 				}
 			}
 
-			CompleteRequest(context->requestId, accepted, std::move(text));
 			delete context;
+
+			std::lock_guard lock(g_resultsMutex);
+			g_results.push_back(std::move(result));
 		}
 
 		bool Show(uint32_t requestId, Keyboard_Options keyboardType, uint32_t maxTextLength, const std::string& title, const std::string& description, const std::string& defaultText)
@@ -456,7 +476,7 @@ namespace
 			}
 
 			context->requestId = requestId;
-			context->async.queue = g_queue;
+			context->async.queue = nullptr; // default process queue
 			context->async.context = context;
 			context->async.callback = OnTextEntryComplete;
 
@@ -480,11 +500,15 @@ namespace
 
 		void Pump()
 		{
-			if (g_queue != nullptr)
+			std::vector<Result> results{};
 			{
-				while (XTaskQueueDispatch(g_queue, XTaskQueuePort::Completion, 0))
-				{
-				}
+				std::lock_guard lock(g_resultsMutex);
+				results.swap(g_results);
+			}
+
+			for (Result& result : results)
+			{
+				CompleteRequest(result.requestId, result.accepted, std::move(result.text));
 			}
 		}
 	}
@@ -493,7 +517,7 @@ namespace
 	bool IsAnyKeyboardAvailable()
 	{
 #if defined(CONTROLLERKEYBOARD_HAS_STEAMWORKS)
-		if (SteamKeyboard::IsOverlayLoaded())
+		if (SteamKeyboard::CanShowKeyboard())
 		{
 			return true;
 		}

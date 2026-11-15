@@ -96,3 +96,12 @@ foreach (GAME IN ITEMS "LE3" "LMP")
     target_compile_definitions (ControllerKeyboard-${GAME} PRIVATE CONTROLLERKEYBOARD_HAS_STEAMWORKS)
   endif ()
 endforeach ()
+
+# Standalone test app for the Windows keyboard path, run outside the game. See TextEntryTest/TextEntryTest.cpp.
+if (LEASI_GDK_ROOT)
+  add_executable (ControllerKeyboardTextEntryTest "TextEntryTest/TextEntryTest.cpp")
+  target_include_directories (ControllerKeyboardTextEntryTest PRIVATE "${LEASI_GDK_ROOT}/windows/include")
+  target_link_directories (ControllerKeyboardTextEntryTest PRIVATE "${LEASI_GDK_ROOT}/windows/lib/x64")
+  target_link_libraries (ControllerKeyboardTextEntryTest PRIVATE xgameruntime.lib GameInput.lib advapi32 xinput WindowsApp)
+  set_target_properties (ControllerKeyboardTextEntryTest PROPERTIES FOLDER "Tools")
+endif ()
