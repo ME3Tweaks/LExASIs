@@ -14,7 +14,7 @@
 #define ASI_NAME_NO_SPACE_W L"ShaderClient"
 
 
-#define ASI_VERSION 1
+#define ASI_VERSION 2
 // String that appears in the file description and part of SPI
 #define ASI_DESCRIPTION "Shader Client generates shader HLSL using the in-game HLSL generator and pipes it to the Shader Host program for compile."
 

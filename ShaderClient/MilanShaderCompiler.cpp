@@ -696,6 +696,21 @@ namespace ShaderClient {
 		// vtable slot mapping.
 		bool isTerrain = IsTerrainMaterialResource(material);
 
+		// ME3's material compiler derives the NUM_WOUNDS environment define from
+		// FMaterialResource::NumWounds(), which returns the owning UMaterial's
+		// nNumWounds.  It is not a vertex-factory-wide constant: only the affected
+		// materials need the GPU-skin wound-ellipse path.  The game source supplied
+		// with this research run confirms that relationship in MaterialShared.cpp.
+		//
+		// Do not touch terrain resources here.  They do not carry a UMaterial at the
+		// FMaterialResource::Material offset, so dereferencing it is unsafe.  An
+		// undefined NUM_WOUNDS is equivalent to zero in the shader #if gates, so
+		// retain that historical form for ordinary non-wound materials.
+		if (!isTerrain && material->Material->nNumWounds > 0) {
+			const auto woundCount = std::to_wstring(material->Material->nNumWounds);
+			AddMacroW(macros, L"NUM_WOUNDS", woundCount.c_str());
+		}
+
 		if (!isTerrain && material->Material->bUsedWithDecals) {
 			AddMacro(macros, "MATERIAL_DECAL", "1");
 		}
@@ -711,6 +726,10 @@ namespace ShaderClient {
 
 		if (!isTerrain && material->Material->bUseLitTranslucencyPostRenderDepthPass) {
 			AddMacro(macros, "MATERIAL_LIT_TRANSLUCENCY_DEPTH_POSTPASS", "1");
+		}
+
+		if (!isTerrain && material->Material->bUseSurfaceTranslucencyDepthPass) {
+			AddMacro(macros, "MATERIAL_TRANSLUCENT_SURFACE_PREPASS", "1");
 		}
 
 		if (!isTerrain && material->Material->bCastLitTranslucencyShadowAsMasked) {

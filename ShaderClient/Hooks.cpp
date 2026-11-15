@@ -1,10 +1,19 @@
-
+﻿
 #include "ShaderClient/Hooks.hpp"
 #include "ShaderClient/Helpers.hpp"
 #include "ShaderClient/Client.hpp"
 #include "Common/Objects.hpp"
 #include "LESDK/Headers.hpp"
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <format>
+#include <intrin.h>
 #include <map>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <unordered_set>
 
 namespace ShaderClient
 {
@@ -29,6 +38,50 @@ namespace ShaderClient
 	tHLSLTranslate* FHLSLTranslator_Translate = nullptr;
 	tHLSLTranslate* FHLSLTranslator_Translate_orig = nullptr;
 	bool AllowLegacyOpaqueSceneDepthTest = false;
+	bool TraceRvrMaterialResolution = false;
+	bool TraceMaterialTranslation = false;
+	std::wstring MaterialTraceFilter = L"HMF_HED_PROMiranda_SCALP_MAT_USER.CombinedEffect_";
+	int ShaderProgressDone = -1;
+	int ShaderProgressTotal = -1;
+	std::wstring CurrentPackageName;
+
+	// Built once by InitializeHooks and then only read. GetTlkString is a very hot path -- id 1 is a
+	// sentinel the game asks for constantly, not just when the loading screen draws -- so this must
+	// not format or allocate per call. Doing so is enough to stall the game into a black screen while
+	// it still makes progress underneath, which is exactly what happened when this was built inline.
+	std::wstring ShaderProgressMessage = L"Shader compile in progress...";
+
+	void RebuildShaderProgressMessage()
+	{
+		ShaderProgressMessage = BuildShaderProgressMessage();
+	}
+
+	std::wstring BuildShaderProgressMessage()
+	{
+		std::wstring message = L"Shader compile in progress";
+
+		// Both counts are required for the counter: one on its own says nothing useful, and printing
+		// "[11/-1]" on the loading screen would be worse than printing no counter at all.
+		if (ShaderProgressDone >= 0 && ShaderProgressTotal > 0)
+		{
+			// Parentheses, not square brackets. A bracketed token in a string returned from
+			// GetTlkString sends the game's own string handling into an infinite loop on the UI
+			// thread: the loading screen appears and then freezes, while shader compilation keeps
+			// running on its own thread and the process never exits cleanly. Verified by bisection --
+			// "Shader compile in progress [1/1]..." hangs, "(1/1)" does not, with nothing else
+			// changed. Do not reintroduce [ ] here.
+			message += std::format(L" ({}/{})", ShaderProgressDone, ShaderProgressTotal);
+		}
+
+		message += L"...";
+
+		if (!CurrentPackageName.empty())
+		{
+			message += std::format(L"\nCurrently compiling {}", CurrentPackageName);
+		}
+
+		return message;
+	}
 
 	tCompileWrapper* FMaterial_Compile = nullptr;
 
@@ -56,6 +109,430 @@ namespace ShaderClient
 	FArchiveProxy_NamesAndObjectsAsStrings_VTable NamesAndObjectsAsStrings_VTable;
 
 	tGetTlkString* GetTlkString_orig = nullptr;
+
+	tRvrGetMaterial* RvrEffectsMaterialUser_GetMaterial_orig = nullptr;
+	tRvrAllocateResource* RvrEffectsMaterialUser_AllocateResource_orig = nullptr;
+	tRvrGetMaterial* RvrMaterialMultiplexor_GetMaterial_orig = nullptr;
+	tRvrAllocateResource* RvrMaterialMultiplexor_AllocateResource_orig = nullptr;
+	tUMaterialSelectResource* UMaterial_SelectResource_orig = nullptr;
+	tUnpackTexture* UnpackTexture_orig = nullptr;
+	tNormalTextureSampleCompile* NormalTextureSampleCompile_orig = nullptr;
+
+	namespace
+	{
+		enum class ERvrTraceEventKind : BYTE
+		{
+			EffectsGetMaterial,
+			EffectsAllocateResource,
+			MultiplexorGetMaterial,
+			MultiplexorAllocateResource,
+			UMaterialSelectResource,
+		};
+
+		struct FRvrTraceEvent
+		{
+			ERvrTraceEventKind Kind{};
+			void* Self = nullptr;
+			void* Context = nullptr;
+			INT Selector = 0;
+			void* Parent = nullptr;
+			void* Base = nullptr;
+			void* Multiplexor = nullptr;
+			void* DefaultMaterial = nullptr;
+			void* Returned = nullptr;
+			void* ResourceOwner = nullptr;
+			INT ParentCount = -1;
+			DWORD ParentNameIndex = 0;
+			DWORD ParentNameNumber = 0;
+			DWORD ResourceIdA = 0;
+			DWORD ResourceIdB = 0;
+			DWORD ResourceIdC = 0;
+			DWORD ResourceIdD = 0;
+		};
+
+		// Rvr allocation and FMaterialShaderMap::Compile are on different game threads. Keep a
+		// bounded global history rather than a thread-local one, then correlate by the exact
+		// returned FMaterialResource pointer at the compiler boundary. No allocation occurs here.
+		constexpr size_t RvrTraceCapacity = 4096;
+		std::array<FRvrTraceEvent, RvrTraceCapacity> GRvrTraceEvents{};
+		size_t GRvrTraceNext = 0;
+		size_t GRvrTraceCount = 0;
+		SRWLOCK GRvrTraceLock = SRWLOCK_INIT;
+
+		// FMaterial::Compile invokes material translation synchronously. Keeping this thread-local
+		// prevents the UnpackTexture hook from turning a package capture into a game-wide texture
+		// trace, while avoiding a cross-thread global state race.
+		thread_local UINT GMaterialTranslationTraceDepth = 0;
+
+		bool IsReadableRange(const void* address, size_t size)
+		{
+			if (address == nullptr || size == 0)
+			{
+				return false;
+			}
+
+			MEMORY_BASIC_INFORMATION memoryInfo{};
+			if (VirtualQuery(address, &memoryInfo, sizeof(memoryInfo)) == 0 || memoryInfo.State != MEM_COMMIT)
+			{
+				return false;
+			}
+
+			const auto addressValue = reinterpret_cast<uintptr_t>(address);
+			const auto regionStart = reinterpret_cast<uintptr_t>(memoryInfo.BaseAddress);
+			const auto regionEnd = regionStart + memoryInfo.RegionSize;
+			if (addressValue < regionStart || addressValue > regionEnd || size > regionEnd - addressValue)
+			{
+				return false;
+			}
+
+			return (memoryInfo.Protect & (PAGE_NOACCESS | PAGE_GUARD)) == 0;
+		}
+
+		template <typename T>
+		bool TryReadMember(const void* object, size_t offset, T& value)
+		{
+			if (object == nullptr || reinterpret_cast<uintptr_t>(object) > UINTPTR_MAX - offset)
+			{
+				return false;
+			}
+
+			const auto address = reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(object) + offset);
+			if (!IsReadableRange(address, sizeof(T)))
+			{
+				return false;
+			}
+
+			std::memcpy(&value, address, sizeof(T));
+			return true;
+		}
+
+		void RecordRvrTraceEvent(const FRvrTraceEvent& event)
+		{
+			AcquireSRWLockExclusive(&GRvrTraceLock);
+			GRvrTraceEvents[GRvrTraceNext] = event;
+			GRvrTraceNext = (GRvrTraceNext + 1) % GRvrTraceEvents.size();
+			GRvrTraceCount = std::min(GRvrTraceCount + 1, GRvrTraceEvents.size());
+			ReleaseSRWLockExclusive(&GRvrTraceLock);
+		}
+
+		void CaptureEffectsRouting(UMaterialInterface* self, FRvrTraceEvent& event)
+		{
+			// URvrEffectsMaterialUser, LE3 11.3.2: base +0xBC, multiplexor +0xCC,
+			// parent +0xD4. GetMaterial selects parent, then base, then Engine default.
+			TryReadMember(self, 0xBC, event.Base);
+			TryReadMember(self, 0xCC, event.Multiplexor);
+			TryReadMember(self, 0xD4, event.Parent);
+		}
+
+		void CaptureMultiplexorRouting(UMaterialInterface* self, FRvrTraceEvent& event)
+		{
+			// URvrMaterialMultiplexor, LE3 11.3.2: tagged-parent array count +0xBC,
+			// parent-name FName +0xC4, default material +0xCC.
+			TryReadMember(self, 0xBC, event.ParentCount);
+			TryReadMember(self, 0xC4, event.ParentNameIndex);
+			TryReadMember(self, 0xC8, event.ParentNameNumber);
+			TryReadMember(self, 0xCC, event.DefaultMaterial);
+		}
+
+		void CaptureResourceOwner(FMaterialResource* resource, FRvrTraceEvent& event)
+		{
+			// Ordinary FMaterialResource's source UMaterial owner and shader-map ID are at
+			// +0xB8 and +0x7C respectively in LE3 11.3.2. Do not call this for terrain.
+			TryReadMember(resource, 0xB8, event.ResourceOwner);
+			TryReadMember(resource, 0x7C, event.ResourceIdA);
+			TryReadMember(resource, 0x80, event.ResourceIdB);
+			TryReadMember(resource, 0x84, event.ResourceIdC);
+			TryReadMember(resource, 0x88, event.ResourceIdD);
+		}
+
+		const wchar_t* RvrTraceKindName(ERvrTraceEventKind kind)
+		{
+			switch (kind)
+			{
+			case ERvrTraceEventKind::EffectsGetMaterial: return L"Effects.GetMaterial";
+			case ERvrTraceEventKind::EffectsAllocateResource: return L"Effects.AllocateResource";
+			case ERvrTraceEventKind::MultiplexorGetMaterial: return L"Multiplexor.GetMaterial";
+			case ERvrTraceEventKind::MultiplexorAllocateResource: return L"Multiplexor.AllocateResource";
+			case ERvrTraceEventKind::UMaterialSelectResource: return L"UMaterial::VirtFunc_102";
+			default: return L"unknown";
+			}
+		}
+
+		// The normal spdlog file sink is intentionally not relied on for this capture-only
+		// diagnostic: automated launches can exit before that shared sink refreshes. This runs only
+		// after a material reaches the compiler hook, never in an Rvr detour, so a tiny direct append
+		// is safe and gives the experiment a stable, independent output file.
+		void AppendRvrTraceLine(const std::wstring& line)
+		{
+			const auto withNewline = line + L"\r\n";
+			OutputDebugStringW(withNewline.c_str());
+
+			CreateDirectoryW(L"Logs", nullptr);
+			const auto file = CreateFileW(L"Logs\\RvrMaterialResolution.log", FILE_APPEND_DATA,
+				FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE)
+			{
+				return;
+			}
+
+			const auto byteCount = static_cast<DWORD>(withNewline.size() * sizeof(wchar_t));
+			DWORD bytesWritten = 0;
+			WriteFile(file, withNewline.data(), byteCount, &bytesWritten, nullptr);
+			CloseHandle(file);
+		}
+
+		void AppendMaterialTranslationTraceLine(const std::wstring& line)
+		{
+			const auto withNewline = line + L"\r\n";
+			OutputDebugStringW(withNewline.c_str());
+
+			CreateDirectoryW(L"Logs", nullptr);
+			const auto file = CreateFileW(L"Logs\\MaterialTranslationTrace.log", FILE_APPEND_DATA,
+				FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE)
+			{
+				return;
+			}
+
+			const auto byteCount = static_cast<DWORD>(withNewline.size() * sizeof(wchar_t));
+			DWORD bytesWritten = 0;
+			WriteFile(file, withNewline.data(), byteCount, &bytesWritten, nullptr);
+			CloseHandle(file);
+		}
+	}
+
+	void WriteRvrMaterialResolutionTraceStatus(const wchar_t* status)
+	{
+		if (TraceRvrMaterialResolution && status != nullptr)
+		{
+			AppendRvrTraceLine(std::format(L"Rvr trace status: {}", status));
+		}
+	}
+
+	void WriteMaterialTranslationTraceStatus(const wchar_t* status)
+	{
+		if (TraceMaterialTranslation && status != nullptr)
+		{
+			AppendMaterialTranslationTraceLine(std::format(L"Material-translation trace status: {}", status));
+		}
+	}
+
+    INT UnpackTexture_hook(FHLSLTranslator* translator, INT sampleCodeIndex,
+        void* texture, UINT textureCompressionSettings)
+	{
+		if (TraceMaterialTranslation && GMaterialTranslationTraceDepth != 0 && texture != nullptr)
+		{
+			// These are raw guarded reads at the exact addresses native UnpackTexture consumes. Do
+			// not call UTexture accessors here: this hook runs in the material translator and needs
+			// to remain observational even when an asset is half initialized.
+			float unpackMin[4]{};
+			float unpackMax[4]{};
+			BYTE runtimeCompression = 0;
+			void* textureClass = nullptr;
+			const bool readMin = TryReadMember(texture, 0x68, unpackMin);
+			const bool readMax = TryReadMember(texture, 0x78, unpackMax);
+			const bool readRuntimeCompression = TryReadMember(texture, 0xBC, runtimeCompression);
+			const bool readClass = TryReadMember(texture, 0x50, textureClass);
+
+			AppendMaterialTranslationTraceLine(std::format(
+				L"  UnpackTexture: translator={}, sample-code={}, texture={}, texture-class={}, passed-compression={}, runtime-compression={}, unpack-min=({}, {}, {}, {}), unpack-max=({}, {}, {}, {}), readable(class/min/max/compression)={}/{}/{}/{}",
+				static_cast<void*>(translator), sampleCodeIndex, texture, readClass ? textureClass : nullptr,
+				textureCompressionSettings,
+				readRuntimeCompression ? runtimeCompression : 0xFF,
+				unpackMin[0], unpackMin[1], unpackMin[2], unpackMin[3],
+				unpackMax[0], unpackMax[1], unpackMax[2], unpackMax[3],
+				readClass, readMin, readMax, readRuntimeCompression));
+		}
+
+        // UnpackTexture's return is a translator code index consumed immediately by its callers.
+        // Keep it explicit rather than tail-calling through a void declaration: losing EAX here
+        // corrupts the material expression graph and produces a later access violation.
+        return UnpackTexture_orig(translator, sampleCodeIndex, texture, textureCompressionSettings);
+    }
+
+	INT __fastcall NormalTextureSampleCompile_hook(void* expression, FHLSLTranslator* translator)
+	{
+		if (TraceMaterialTranslation && GMaterialTranslationTraceDepth != 0 && expression != nullptr)
+		{
+			// This is deliberately a raw, pre-call snapshot of the values the normal expression uses
+			// at its 0x288F70 compression branch. It distinguishes the InstanceOverride value from the
+			// expression texture's own CompressionSettings without changing either path.
+			void* expressionVTable = nullptr;
+			void* expressionTexture = nullptr;
+			void* instanceOverride = nullptr;
+			UINT parameterName[2]{};
+			BYTE overrideCompression = 0;
+			BYTE textureCompression = 0;
+
+			const bool readVTable = TryReadMember(expression, 0x0, expressionVTable);
+			const bool readTexture = TryReadMember(expression, 0x80, expressionTexture);
+			const bool readParameterName = TryReadMember(expression, 0x9C, parameterName);
+			const bool readInstanceOverride = TryReadMember(expression, 0xA4, instanceOverride);
+			const bool readOverrideCompression = instanceOverride != nullptr &&
+				TryReadMember(instanceOverride, 0x8, overrideCompression);
+			const bool readTextureCompression = expressionTexture != nullptr &&
+				TryReadMember(expressionTexture, 0xBC, textureCompression);
+
+			AppendMaterialTranslationTraceLine(std::format(
+				L"  NormalTextureSample.Compile: expression={}, vtable={}, translator={}, expression-texture={}, parameter-name={}:{} , instance-override={}, override-compression={}, texture-compression={}, readable(vtable/texture/name/override/override-compression/texture-compression)={}/{}/{}/{}/{}/{}",
+				expression, readVTable ? expressionVTable : nullptr, static_cast<void*>(translator),
+				readTexture ? expressionTexture : nullptr, parameterName[0], parameterName[1],
+				readInstanceOverride ? instanceOverride : nullptr,
+				readOverrideCompression ? overrideCompression : 0xFF,
+				readTextureCompression ? textureCompression : 0xFF,
+				readVTable, readTexture, readParameterName, readInstanceOverride,
+				readOverrideCompression, readTextureCompression));
+		}
+
+		return NormalTextureSampleCompile_orig(expression, translator);
+	}
+
+
+	UMaterial* RvrEffectsMaterialUser_GetMaterial_hook(UMaterialInterface* self, UMaterialInterface* context, INT selector)
+	{
+		const auto result = RvrEffectsMaterialUser_GetMaterial_orig(self, context, selector);
+		if (!TraceRvrMaterialResolution)
+		{
+			return result;
+		}
+
+		FRvrTraceEvent event{ ERvrTraceEventKind::EffectsGetMaterial, self, context, selector };
+		CaptureEffectsRouting(self, event);
+		event.Returned = result;
+		RecordRvrTraceEvent(event);
+		return result;
+	}
+
+	FMaterialResource* RvrEffectsMaterialUser_AllocateResource_hook(UMaterialInterface* self)
+	{
+		const auto result = RvrEffectsMaterialUser_AllocateResource_orig(self);
+		if (!TraceRvrMaterialResolution)
+		{
+			return result;
+		}
+
+		FRvrTraceEvent event{ ERvrTraceEventKind::EffectsAllocateResource, self };
+		CaptureEffectsRouting(self, event);
+		event.Returned = result;
+		CaptureResourceOwner(result, event);
+		RecordRvrTraceEvent(event);
+		return result;
+	}
+
+	UMaterial* RvrMaterialMultiplexor_GetMaterial_hook(UMaterialInterface* self, UMaterialInterface* context, INT selector)
+	{
+		const auto result = RvrMaterialMultiplexor_GetMaterial_orig(self, context, selector);
+		if (!TraceRvrMaterialResolution)
+		{
+			return result;
+		}
+
+		FRvrTraceEvent event{ ERvrTraceEventKind::MultiplexorGetMaterial, self, context, selector };
+		CaptureMultiplexorRouting(self, event);
+		event.Returned = result;
+		RecordRvrTraceEvent(event);
+		return result;
+	}
+
+	FMaterialResource* RvrMaterialMultiplexor_AllocateResource_hook(UMaterialInterface* self)
+	{
+		const auto result = RvrMaterialMultiplexor_AllocateResource_orig(self);
+		if (!TraceRvrMaterialResolution)
+		{
+			return result;
+		}
+
+		FRvrTraceEvent event{ ERvrTraceEventKind::MultiplexorAllocateResource, self };
+		CaptureMultiplexorRouting(self, event);
+		event.Returned = result;
+		CaptureResourceOwner(result, event);
+		RecordRvrTraceEvent(event);
+		return result;
+	}
+
+	UINT64 UMaterial_SelectResource_hook(UMaterial* self, FStaticParameterSet* parameters,
+		FMaterial* candidateResource, EShaderPlatform platform, INT resourceIndexOrQuality,
+		UINT arg6, UINT arg7)
+	{
+		if (TraceRvrMaterialResolution)
+		{
+			// VirtFunc_102 invokes FMaterial::Compile before it returns, so this needs to be in
+			// the bounded history first for FMaterialCompile_hook to correlate the same resource.
+			// Recording scalar values here is observational and cannot affect selection.
+			FRvrTraceEvent event{ ERvrTraceEventKind::UMaterialSelectResource, self, parameters, resourceIndexOrQuality };
+			TryReadMember(self, 0x40, event.Parent); // child's Outer, normally URvrEffectsMaterialUser
+			TryReadMember(self, 0x3A0, event.Base);  // engine fallback resource
+			if (resourceIndexOrQuality >= 0 && resourceIndexOrQuality < 64)
+			{
+				TryReadMember(self, 0xA4 + static_cast<size_t>(resourceIndexOrQuality) * sizeof(void*), event.DefaultMaterial);
+			}
+			event.Returned = candidateResource;
+			CaptureResourceOwner(reinterpret_cast<FMaterialResource*>(candidateResource), event);
+			RecordRvrTraceEvent(event);
+		}
+
+		return UMaterial_SelectResource_orig(self, parameters, candidateResource, platform,
+			resourceIndexOrQuality, arg6, arg7);
+	}
+
+	void FlushRvrMaterialResolutionTrace(FMaterialResource* material, const FString& materialPath)
+	{
+		if (!TraceRvrMaterialResolution || material == nullptr ||
+			std::wstring_view(materialPath.Chars()).find(L"HMF_HED_PROMiranda_SCALP_MAT_USER.CombinedEffect_") == std::wstring_view::npos)
+		{
+			return;
+		}
+
+		std::array<FRvrTraceEvent, RvrTraceCapacity> snapshot{};
+		size_t snapshotCount = 0;
+		AcquireSRWLockShared(&GRvrTraceLock);
+		snapshotCount = GRvrTraceCount;
+		const auto start = (GRvrTraceNext + RvrTraceCapacity - snapshotCount) % RvrTraceCapacity;
+		for (size_t index = 0; index < snapshotCount; ++index)
+		{
+			snapshot[index] = GRvrTraceEvents[(start + index) % RvrTraceCapacity];
+		}
+		ReleaseSRWLockShared(&GRvrTraceLock);
+
+		void* matchedOwner = nullptr;
+		size_t resourceMatchCount = 0;
+		for (size_t index = 0; index < snapshotCount; ++index)
+		{
+			const auto& event = snapshot[index];
+			if (event.Returned == material || event.DefaultMaterial == material)
+			{
+				matchedOwner = event.ResourceOwner;
+				++resourceMatchCount;
+			}
+		}
+
+		const auto header = std::format(L"Transient material trace for {}: {} retained events, {} resource matches; compiled resource={}, owner={}",
+			materialPath.Chars(), snapshotCount, resourceMatchCount, static_cast<void*>(material), matchedOwner);
+		LEASI_INFO(L"{}", header);
+		AppendRvrTraceLine(header);
+		for (size_t index = 0; index < snapshotCount; ++index)
+		{
+			const auto& event = snapshot[index];
+			const bool allocatedThisResource = event.Returned == material || event.DefaultMaterial == material;
+			const bool resolvedMatchedOwner = matchedOwner != nullptr && event.Returned == matchedOwner;
+			if (!allocatedThisResource && !resolvedMatchedOwner)
+			{
+				continue;
+			}
+			const auto line = event.Kind == ERvrTraceEventKind::UMaterialSelectResource
+				? std::format(L"  {}: child={}, static-parameters={}, requested-index={}, child-outer={}, fallback={}, selected-resource={}, candidate-resource={}, owner={}, resource-id={:08X}-{:08X}-{:08X}-{:08X}, matches-compile-resource={}",
+					RvrTraceKindName(event.Kind), event.Self, event.Context, event.Selector, event.Parent,
+					event.Base, event.DefaultMaterial, event.Returned, event.ResourceOwner, event.ResourceIdA,
+					event.ResourceIdB, event.ResourceIdC, event.ResourceIdD, allocatedThisResource)
+				: std::format(L"  Rvr {}: self={}, context={}, selector={}, parent={}, base={}, mux={}, default={}, return={}, owner={}, matches-compile-resource={}, tag-parent-count={}, tag-name={}:{}",
+					RvrTraceKindName(event.Kind), event.Self, event.Context, event.Selector, event.Parent,
+					event.Base, event.Multiplexor, event.DefaultMaterial, event.Returned, event.ResourceOwner,
+					allocatedThisResource, event.ParentCount, event.ParentNameIndex, event.ParentNameNumber);
+			LEASI_INFO(L"{}", line);
+			AppendRvrTraceLine(line);
+		}
+		GRvrTraceCount = 0;
+	}
 
 	FArchiveProxy GetStringWithObjectWriterProxy(FArchive& inArchive) {
 		// Copy strings VTable
@@ -302,6 +779,199 @@ namespace ShaderClient
 	}
 
 	tTerrainGetCachedMaterial* ATerrain_GetCachedMaterial_orig = nullptr;
+	tUMaterialCheckMaterialUsage* UMaterial_CheckMaterialUsage_orig = nullptr;
+
+	UBOOL UMaterial_CheckMaterialUsage_hook(UMaterial* material, int usage)
+	{
+		const auto result = UMaterial_CheckMaterialUsage_orig(material, usage);
+
+		// These are the return addresses of the two calls in LE3 11.3.2's
+		// FTerrainSceneProxy::FTerrainSceneProxy (0x7ff74b08dc60). Filtering here keeps
+		// general material-usage traffic out of ShaderClient's log while reporting the exact
+		// native decision that leads to the DefaultMaterial foliage substitution.
+		const auto returnAddress = reinterpret_cast<uintptr_t>(_ReturnAddress());
+		constexpr uintptr_t TerrainFoliageUsageReturnAddress = 0x7ff74b08df8e;
+		constexpr uintptr_t TerrainStaticLightingUsageReturnAddress = 0x7ff74b08dfa3;
+		if (returnAddress == TerrainFoliageUsageReturnAddress || returnAddress == TerrainStaticLightingUsageReturnAddress)
+		{
+			const wchar_t* usageName = usage == 5 ? L"foliage" : usage == 7 ? L"static-lighting" : L"unexpected";
+			const std::wstring materialName = material == nullptr ? L"<null>" : material->GetFullPath().Chars();
+			if (result)
+			{
+				LEASI_INFO(L"Terrain foliage material usage accepted: material={}, usage={}", materialName, usageName);
+			}
+			else
+			{
+				LEASI_WARN(L"Terrain foliage fell back to Engine.DefaultMaterial: material={} rejected usage={}", materialName, usageName);
+			}
+		}
+
+		return result;
+	}
+
+	namespace
+	{
+		// UMaterialInterface vtable slot 98 (+0x310). UMaterial and UMaterialInstance both route it
+		// into the shared usage worker at 0x7ff74ab2e260. On this shipping build that worker is pure:
+		// it clears its out flag and never sets it. Asking again here therefore reproduces the
+		// constructor's decision without side effects.
+		UBOOL CheckMaterialUsageVirtual(UMaterialInterface* material, int usage)
+		{
+			using tCheckUsage = UBOOL(UMaterialInterface*, int);
+			auto* const vtable = *reinterpret_cast<tCheckUsage* const* const*>(material);
+			return vtable[0x310 / sizeof(void*)](material, usage);
+		}
+
+		// UStaticMeshComponent vtable +0x5D8: GetMaterial(MaterialIndex, LODIndex), the same call
+		// FLODInfo makes for each element.
+		UMaterialInterface* GetComponentMaterial(UStaticMeshComponent* component, INT materialIndex, INT lodIndex)
+		{
+			using tGetMaterial = UMaterialInterface* (UStaticMeshComponent*, INT, INT);
+			auto* const vtable = *reinterpret_cast<tGetMaterial* const* const*>(component);
+			return vtable[0x5D8 / sizeof(void*)](component, materialIndex, lodIndex);
+		}
+
+		// Native-only UStaticMesh render data, as FLODInfo reads it:
+		//   StaticMesh+0x60    FStaticMeshRenderData** (TIndirectArray LODModels data)
+		//   RenderData+0x1B0   FStaticMeshElement* Elements, +0x1B8 INT count, stride 0x50
+		//   Element+0x34       INT MaterialIndex
+		constexpr size_t StaticMeshLODModelsOffset = 0x60;
+		constexpr size_t RenderDataElementsOffset = 0x1B0;
+		constexpr size_t RenderDataElementCountOffset = 0x1B8;
+		constexpr size_t StaticMeshElementStride = 0x50;
+		constexpr size_t StaticMeshElementMaterialIndexOffset = 0x34;
+
+		// FLODInfo layout: TArray<FElementInfo> Elements at +0x8. FElementInfo is 12 bytes, with a
+		// UBOOL at +0 and the UMaterialInterface* at +4 (unaligned; see the MOVSD store at 0x7ff74b06d867).
+		constexpr size_t LODInfoElementsOffset = 0x8;
+		constexpr size_t LODInfoElementStride = 0xC;
+		constexpr size_t LODInfoElementMaterialOffset = 0x4;
+
+		// Material instances answer usage checks with their base UMaterial's flags. Naming that
+		// material is what makes the log actionable.
+		UMaterial* FindBaseMaterial(UMaterialInterface* material)
+		{
+			for (int depth = 0; material != nullptr && depth < 32; depth++)
+			{
+				if (material->IsA(UMaterial::StaticClass()))
+				{
+					return static_cast<UMaterial*>(material);
+				}
+				if (!material->IsA(UMaterialInstance::StaticClass()))
+				{
+					return nullptr;
+				}
+				material = static_cast<UMaterialInstance*>(material)->Parent;
+			}
+			return nullptr;
+		}
+
+		// Proxies are rebuilt every time a component reattaches, so the same element would otherwise
+		// be reported over and over.
+		std::mutex StaticMeshFallbackReportedLock;
+		std::unordered_set<std::wstring> StaticMeshFallbackReported;
+
+		void ReportStaticMeshDefaultMaterialFallbacks(void* lodInfo, UStaticMeshComponent* component, INT lodIndex)
+		{
+			if (lodInfo == nullptr || component == nullptr || GEngine == nullptr || *GEngine == nullptr)
+			{
+				return;
+			}
+
+			UMaterialInterface* const defaultMaterial = (*GEngine)->DefaultMaterial;
+			auto* const elements = *reinterpret_cast<BYTE**>(static_cast<BYTE*>(lodInfo) + LODInfoElementsOffset);
+			const INT elementCount = *reinterpret_cast<INT*>(static_cast<BYTE*>(lodInfo) + LODInfoElementsOffset + 0x8);
+			if (defaultMaterial == nullptr || elements == nullptr || component->StaticMesh == nullptr)
+			{
+				return;
+			}
+
+			auto* const lodModels = *reinterpret_cast<BYTE***>(reinterpret_cast<BYTE*>(component->StaticMesh) + StaticMeshLODModelsOffset);
+			auto* const renderData = lodModels[lodIndex];
+			auto* const meshElements = *reinterpret_cast<BYTE**>(renderData + RenderDataElementsOffset);
+			const INT meshElementCount = *reinterpret_cast<INT*>(renderData + RenderDataElementCountOffset);
+
+			// Mirrors the constructor's bHasStaticLighting and encoding tests exactly.
+			bool hasStaticLighting = false;
+			if (lodIndex < static_cast<INT>(component->LODData.Count()))
+			{
+				const auto& lodData = component->LODData(lodIndex);
+				hasStaticLighting = lodData.LightMap != nullptr || lodData.ShadowMaps.Count() != 0 || lodData.ShadowVertexBuffers.Count() != 0;
+			}
+			const INT lightMapEncoding = *reinterpret_cast<INT*>(reinterpret_cast<BYTE*>(component) + 0x27C);
+
+			for (INT elementIndex = 0; elementIndex < elementCount && elementIndex < meshElementCount; elementIndex++)
+			{
+				UMaterialInterface* used = nullptr;
+				std::memcpy(&used, elements + elementIndex * LODInfoElementStride + LODInfoElementMaterialOffset, sizeof(used));
+				if (used != defaultMaterial)
+				{
+					continue;
+				}
+
+				const INT materialIndex = *reinterpret_cast<INT*>(meshElements + elementIndex * StaticMeshElementStride + StaticMeshElementMaterialIndexOffset);
+				UMaterialInterface* const requested = GetComponentMaterial(component, materialIndex, lodIndex);
+				if (requested == defaultMaterial)
+				{
+					// Asked for DefaultMaterial by name; nothing substituted.
+					continue;
+				}
+
+				std::wstring reason;
+				if (requested == nullptr)
+				{
+					reason = L"no material assigned";
+				}
+				else if (hasStaticLighting && !CheckMaterialUsageVirtual(requested, 7))
+				{
+					reason = L"rejected MATUSAGE_StaticLighting (bUsedWithStaticLighting)";
+				}
+				else if (hasStaticLighting && lightMapEncoding == 1 && !CheckMaterialUsageVirtual(requested, 22))
+				{
+					reason = L"rejected MATUSAGE_VectorLightMaps (bUsedWithVectorLightMaps; LightMapEncoding=LMET_Vector)";
+				}
+				else if (hasStaticLighting && lightMapEncoding == 2 && !CheckMaterialUsageVirtual(requested, 23))
+				{
+					reason = L"rejected MATUSAGE_SimpleLightMaps (bUsedWithSimpleLightMaps; LightMapEncoding=LMET_Simple)";
+				}
+				else
+				{
+					reason = std::format(L"unknown (static-lighting={}, encoding={})", hasStaticLighting, lightMapEncoding);
+				}
+
+				const std::wstring componentPath = component->GetFullPath().Chars();
+				{
+					std::scoped_lock lock{ StaticMeshFallbackReportedLock };
+					if (!StaticMeshFallbackReported.insert(std::format(L"{}|{}|{}", componentPath, lodIndex, elementIndex)).second)
+					{
+						continue;
+					}
+				}
+
+				const std::wstring requestedPath = requested == nullptr ? L"<null>" : requested->GetFullPath().Chars();
+				UMaterial* const baseMaterial = FindBaseMaterial(requested);
+				const std::wstring basePath = baseMaterial == nullptr ? L"<none>" : baseMaterial->GetFullPath().Chars();
+				LEASI_WARN(L"Static mesh fell back to Engine.DefaultMaterial: component={}, mesh={}, LOD={}, element={}, material={}, base={}, reason={}",
+					componentPath,
+					component->StaticMesh->GetFullPath().Chars(),
+					lodIndex,
+					elementIndex,
+					requestedPath,
+					basePath,
+					reason);
+			}
+		}
+	}
+
+	tStaticMeshLODInfoCtor* StaticMeshLODInfoCtor_orig = nullptr;
+
+	void* StaticMeshLODInfoCtor_hook(void* lodInfo, UStaticMeshComponent* component, INT lodIndex)
+	{
+		auto* const result = StaticMeshLODInfoCtor_orig(lodInfo, component, lodIndex);
+		ReportStaticMeshDefaultMaterialFallbacks(lodInfo, component, lodIndex);
+		return result;
+	}
+
 	void* ATerrain_GetCachedMaterial_hook(ATerrain* terrain, const void* mask, UBOOL* outIsTerrainResource)
 	{
 		// Confirmed against LE3 11.3.2 at 0x7ff74b097c70: FTerrainMaterialMask is
@@ -339,6 +1009,16 @@ namespace ShaderClient
 
 	UBOOL FMaterialCompile_hook(FMaterialResource* fmaterial, FStaticParameterSet* parameterSet, EShaderPlatform shaderplatform, FMaterialShaderMap** shaderMap, UBOOL forceCompile, UBOOL bCompileFallback, UBOOL debugDump)
 	{
+		// Scope the set across the whole compile, not just the inner shader map compiles.
+		//
+		// SaveMaterialBinary() runs near the end of this function, after every
+		// FMaterialShaderMap::Compile inside it has already returned and dropped its own scope. Without
+		// this the global was back to nullptr by then, GetMaterialWireName() produced no key, and an
+		// instance permutation's material resource went out under the parent UMaterial's bare path --
+		// where ShaderHost resolves it to the parent and overwrites the parent's compiled resource.
+		// Base materials are unaffected either way: their set overrides nothing, so it yields no key.
+		StaticParameterScope compileScope{ parameterSet };
+
 		// FTerrainMaterialResource has no `Material` (UMaterial*) field -- ->Material on one of these
 		// is garbage. Every generic material below the FMaterial interface still works on it, but the
 		// three usage flags below are UMaterial-only fields, and the logging needs a name that doesn't
@@ -358,8 +1038,59 @@ namespace ShaderClient
 
 		FString friendlyName;
 		GetFriendlyNameVirtual(fmaterial, &friendlyName);
+		// This is the actual HLSL-translation boundary. Correlate the UMaterial selection event
+		// here rather than at FMaterialShaderMap::Compile, which can be reached multiple times for
+		// a resource and made the earlier Rvr-only experiment look like a hanging/no-op path.
+		const bool matchesTraceFilter = fmaterial->Material != nullptr && !MaterialTraceFilter.empty() &&
+			std::wstring_view(fmaterial->Material->GetFullPath().Chars()).find(MaterialTraceFilter) != std::wstring_view::npos;
+		const bool traceTarget = TraceRvrMaterialResolution && !isTerrain && matchesTraceFilter;
+		const bool translationTraceTarget = TraceMaterialTranslation && !isTerrain && matchesTraceFilter;
+		if (traceTarget)
+		{
+			const auto materialPath = fmaterial->Material->GetFullPath();
+			FlushRvrMaterialResolutionTrace(fmaterial, materialPath);
 
+			// The selected-resource hook above may run during startup rather than immediately before
+			// this compile. Record the compiler boundary's own resource owner and the owner's Outer as
+			// the authoritative fallback correlation, irrespective of that timing.
+			FRvrTraceEvent compileEvent{};
+			CaptureResourceOwner(fmaterial, compileEvent);
+			void* ownerOuter = nullptr;
+			TryReadMember(compileEvent.ResourceOwner, 0x40, ownerOuter);
+			AppendRvrTraceLine(std::format(L"  FMaterial::Compile input: resource={}, owner={}, owner-outer={}, material={}, force={}, fallback={}, debug={}, current-map={}, out-map={}",
+				static_cast<void*>(fmaterial), compileEvent.ResourceOwner, ownerOuter, materialPath.Chars(),
+				forceCompile, bCompileFallback, debugDump, static_cast<void*>(fmaterial->ShaderMap.Object),
+				shaderMap == nullptr ? nullptr : static_cast<void*>(*shaderMap)));
+		}
+
+		if (translationTraceTarget)
+		{
+			AppendMaterialTranslationTraceLine(std::format(L"FMaterial::Compile translation window entered: material={}, resource={}",
+				fmaterial->Material->GetFullPath().Chars(), static_cast<void*>(fmaterial)));
+			++GMaterialTranslationTraceDepth;
+		}
 		auto result = FMaterialCompile_orig(fmaterial, parameterSet, shaderplatform, shaderMap, forceCompile, bCompileFallback, debugDump);
+		if (translationTraceTarget)
+		{
+			--GMaterialTranslationTraceDepth;
+			AppendMaterialTranslationTraceLine(std::format(L"FMaterial::Compile translation window exited: material={}, returned={}",
+				fmaterial->Material->GetFullPath().Chars(), result));
+		}
+		if (traceTarget)
+		{
+			AppendRvrTraceLine(std::format(L"  FMaterial::Compile result: material={}, returned={}, current-map={}, out-map={}",
+				friendlyName.Chars(), result, static_cast<void*>(fmaterial->ShaderMap.Object),
+				shaderMap == nullptr ? nullptr : static_cast<void*>(*shaderMap)));
+			if (!result)
+			{
+				// Capture-only normally suppresses compile errors to keep corpus output concise. This
+				// opt-in, one-family trace needs the reason a resource did not reach SaveShaderCache.
+				for (UINT errorIndex = 0; errorIndex < fmaterial->CompileErrors.Count(); ++errorIndex)
+				{
+					AppendRvrTraceLine(std::format(L"    compile error: {}", fmaterial->CompileErrors.GetData()[errorIndex].Chars()));
+				}
+			}
+		}
 		if (result) {
 			// Successfully generated material shader
 			LEASI_INFO(L"Material compiled successfully: {}", friendlyName.Chars());
@@ -393,6 +1124,7 @@ namespace ShaderClient
 			}
 		}
 		else if (!CaptureOnly) {
+			SendMaterialCompileFailure(fmaterial);
 			LEASI_ERROR(L"Material failed to compile: {}", friendlyName.Chars());
 			for (UINT i = 0; i < fmaterial->CompileErrors.Count(); i++) {
 				LEASI_WARN("  {}", fmaterial->CompileErrors.GetData()[i]);
@@ -406,6 +1138,19 @@ namespace ShaderClient
 	UBOOL FMaterialShaderMap_Compile_hook(FMaterialShaderMap* map, FMaterialResource* material, FStaticParameterSet* InParameters, wchar_t* materialCode, FUniformExpressionSet* InUniformExpressionSet, EShaderPlatform platform, TArray<FString>* outErrors, BOOL bSilent, BOOL bDebugDump)
 	{
 		LEASI_UNUSED_4(bDebugDump, bSilent, outErrors, platform);
+
+		// One FMaterialShaderMap::Compile is one shader map, which is one static parameter set. Scope
+		// the set to this call so GetMaterialWireName can key the capture by it; an instance
+		// permutation is compiled through a resource whose ->Material is the parent UMaterial, and
+		// without this every permutation would overwrite the parent's own captured jobs.
+		//
+		// The scope now lives in Client.hpp and restores the previous value on exit, so finishing here
+		// hands the enclosing FMaterial::Compile its set back rather than clearing it.
+		StaticParameterScope staticParameterScope{ InParameters };
+
+		// Feeds the auto-exit watchdog. Signalled on entry and again on exit so a single long compile
+		// cannot be mistaken for the level having gone idle.
+		NotifyCompileActivity();
 
 		// Use to dump HLSL for compiled T3D materials
 		//SaveMaterialHLSL(material, materialCode);
@@ -466,9 +1211,11 @@ namespace ShaderClient
 			if (CaptureOnly) {
 				// Record the job and move on. No shader is built, so no shader map is either.
 				CaptureShaderJob(material, &var, env);
+				NotifyCompileActivity();
 				continue;
 			}
 
+			NotifyCompileActivity();
 			auto compileOK = CompileSingleShader(material, &var, env, &shaderList);
 			if (!compileOK) {
 				if (var.vertexFactoryType != nullptr) {
@@ -532,7 +1279,8 @@ namespace ShaderClient
 			return outStr;
 		}
 		if (id == 1) {
-			*outStr = L"Shader compile in progress...";
+			// Pre-built; see ShaderProgressMessage. Do not format here.
+			*outStr = ShaderProgressMessage.c_str();
 			return outStr;
 		}
 		else if (id == 170447) { // Loading widget Loading
@@ -567,6 +1315,7 @@ namespace ShaderClient
 	}
 
 	bool BootShaderCompilerLevel = false;
+	bool ExitWhenLoadScreenDrops = true;
 	bool EnableShaderCompile = true;
 	t_UObject_ProcessInternal* UObject_ProcessInternal_orig = nullptr;
 	void UObject_ProcessInternal_hook(UObject* const Context, FFrame* const Stack, void* const Result)
@@ -614,6 +1363,30 @@ namespace ShaderClient
 		}
 
 		PlayLoadingMovie_orig(param_1, levelName, param3);
+	}
+
+	tStopLoadingMovie* StopLoadingMovie_orig = nullptr;
+	UBOOL StopLoadingMovie_hook(USFXLoadMovieManager* self, int param2) {
+		auto const result = StopLoadingMovie_orig(self, param2);
+
+		// Only in shader-compile mode: everywhere else the load screen coming down is just the game
+		// starting to play.
+		if (BootShaderCompilerLevel && ExitWhenLoadScreenDrops) {
+			LEASI_INFO(L"Load screen came down; shader compiling is finished. Exiting.");
+
+			// Deliberately abrupt. This process exists only to compile shaders, everything the host
+			// needs is already in the pipe, and the engine's own shutdown path is slow and has been a
+			// source of spurious 0xC0000005 exit codes.
+			//
+			// Flush first. The logger only flushes info lines every 5s, so without this the kill takes
+			// everything logged since the last flush with it -- a whole short compile, "Trying to compile"
+			// and "compiled successfully" lines included, leaving a log that looks like the game never
+			// reached the compiler level.
+			LEASI_FLUSH();
+			TerminateProcess(GetCurrentProcess(), k_shaderClientExitCode);
+		}
+
+		return result;
 	}
 
 	tReturnBool* IsWindowFocused_orig = nullptr;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <LESDK/Headers.hpp>
 #include <LESDK/Init.hpp>
 #include "Common/Base.hpp"
@@ -14,9 +15,73 @@ namespace ShaderClient
     // If true we should boot into shader compiler level on start
     extern bool BootShaderCompilerLevel;
 
+    /// <summary>
+    /// Terminate the process as soon as the load screen comes down in shader-compile mode. On by
+    /// default; -NoExitOnLoadScreen leaves the game to exit by its own returntolauncher path.
+    /// </summary>
+    extern bool ExitWhenLoadScreenDrops;
+
+    /// <summary>
+    /// Exit code used when ShaderClient terminates the game itself after the load screen comes down.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not 0: the host needs to tell "we killed it at our own exit point, having written
+    /// everything" apart from "the game reached its own returntolauncher path", which also exits 0.
+    /// The two mean different things for a capture -- the second means the fast exit did not happen.
+    /// 0x4D49 is 'MI', chosen to be obviously ours and not to collide with an NTSTATUS-shaped crash
+    /// code such as 0xC0000005. MilanShaderBuilderFlow has the matching constant.
+    /// </remarks>
+    inline constexpr UINT k_shaderClientExitCode = 0x4D49;
+
+    /// <summary>
+    /// Exit code used when the idle backstop fires instead. Distinct from
+    /// <see cref="k_shaderClientExitCode"/> on purpose: seeing this means the load screen never came
+    /// down, which is a wedged compile worth investigating, not a normal run.
+    /// </summary>
+    inline constexpr UINT k_shaderClientIdleExitCode = 0x4D57;
+
     // Opt-in compatibility mode for legacy opaque materials that use SceneDepth in LE3.
     // It filters only the known compatibility diagnostic and does not change material data.
     extern bool AllowLegacyOpaqueSceneDepthTest;
+
+    // Purely observational Rvr material-routing telemetry. This is intentionally opt-in because
+    // Rvr material resolution is hot during a normal compilation. The hooks retain only scalar
+    // pointer facts and emit them when the matching Miranda CombinedEffect reaches the compiler.
+    extern bool TraceRvrMaterialResolution;
+
+    // Purely observational material-translator telemetry. It is scoped by FMaterial::Compile to
+    // one material family and records only raw UTexture unpack state at the native UnpackTexture
+    // boundary.
+    extern bool TraceMaterialTranslation;
+
+    // Substring matched against a material's full path to decide which family the two traces above
+    // are scoped to. Both traces run inside the material translator, which is hot, so they stay
+    // narrowed to one family at a time rather than logging every compile.
+    //
+    // It defaults to the Miranda scalp CombinedEffect target the traces were originally written for,
+    // so passing no filter reproduces exactly the previous behaviour. -TraceMaterialFilter=<substring>
+    // repoints them without a code change: the same UnpackTexture evidence is what decides whether a
+    // material's normal map reached the translator with its real UnpackMin or a default one.
+    extern std::wstring MaterialTraceFilter;
+
+    // Progress shown on the compiler level's loading screen. The host drives one game process per
+    // package, so from inside the game there is no way to know where in the run we are -- the window
+    // just opens and closes. These carry that context in from the host's own loop.
+    //
+    // Both counts default to -1 meaning "not supplied", so the string stays exactly as it was when
+    // the host does not pass them. CurrentPackageName empty means the same for its line.
+    extern int ShaderProgressDone;
+    extern int ShaderProgressTotal;
+    extern std::wstring CurrentPackageName;
+
+    // Builds the loading-screen text: "Shader compile in progress[ [done/total]]...", plus a
+    // "Currently compiling <package>" line when a package name was supplied.
+    std::wstring BuildShaderProgressMessage();
+
+    // The finished string, built once after the switches are read. GetTlkString serves it directly:
+    // id 1 is asked for far too often to format anything per call.
+    extern std::wstring ShaderProgressMessage;
+    void RebuildShaderProgressMessage();
 
     using tFGetMaterialFriendlyName = FString* (void* fmaterial, FString* OutStr);
     extern tFGetMaterialFriendlyName* FMaterial_GetFriendlyName; // (tFGetMaterialFriendlyName)0x7ff74ab4dec0; // RVA 2BDEC0
@@ -232,6 +297,17 @@ namespace ShaderClient
 	extern tPlayLoadingMovie* PlayLoadingMovie_orig;
     void PlayLoadingMovie_hook(USFXLoadMovieManager* param_1, FString* levelName, int param3);
 
+    // LE3 11.3.2 SFXLoadMovieManager's real "stop the loading movie" implementation (the script glue
+    // at 0xb6db40 just unpacks a parameter and calls this). This is the load screen coming *down*.
+    //
+    // In this flow the shaders are compiled while the load screen is up, so by the time this runs the
+    // work is done and every payload has already been written to the host pipe -- SendDebugInfoToMilanHost
+    // writes synchronously. What follows otherwise is dead time: the game boots into the level and a
+    // moment later calls returntolauncher to exit. Terminating here skips that tail.
+    using tStopLoadingMovie = UBOOL(USFXLoadMovieManager* self, int param2);
+    extern tStopLoadingMovie* StopLoadingMovie_orig;
+    UBOOL StopLoadingMovie_hook(USFXLoadMovieManager* self, int param2);
+
     // For making sure game doesn't pause
     using tReturnBool = BOOL();
 	extern tReturnBool* IsWindowFocused_orig;
@@ -248,6 +324,72 @@ namespace ShaderClient
     using tTerrainGetCachedMaterial = void* (ATerrain* terrain, const void* mask, UBOOL* outIsTerrainResource);
     extern tTerrainGetCachedMaterial* ATerrain_GetCachedMaterial_orig;
     void* ATerrain_GetCachedMaterial_hook(ATerrain* terrain, const void* mask, UBOOL* outIsTerrainResource);
+
+    // LE3 11.3.2 UMaterial vtable slot 98 (offset 0x310). FTerrainSceneProxy calls this
+    // through the selected TerrainFoliageMesh material for MATUSAGE_Foliage (5) and
+    // MATUSAGE_StaticLighting (7), falling back to GEngine->DefaultMaterial if either fails.
+    using tUMaterialCheckMaterialUsage = UBOOL(UMaterial* material, int usage);
+    extern tUMaterialCheckMaterialUsage* UMaterial_CheckMaterialUsage_orig;
+    UBOOL UMaterial_CheckMaterialUsage_hook(UMaterial* material, int usage);
+
+    // LE3 11.3.2 FStaticMeshSceneProxy::FLODInfo::FLODInfo(const UStaticMeshComponent*, INT LODIndex)
+    // at 0x7ff74b06d5d0 (RVA 0x7DD5D0). For each mesh element it takes the component's material and,
+    // when the LOD has static lighting, checks MATUSAGE_StaticLighting (7) and then VectorLightMaps
+    // (22) or SimpleLightMaps (23) depending on the component's LightMapEncoding. A failed check
+    // silently substitutes GEngine->DefaultMaterial. That is the checkerboard route that shader-map
+    // logging never sees. The hook runs the constructor and then reports any element that ended up
+    // on DefaultMaterial, along with the reason.
+    using tStaticMeshLODInfoCtor = void* (void* lodInfo, UStaticMeshComponent* component, INT lodIndex);
+    extern tStaticMeshLODInfoCtor* StaticMeshLODInfoCtor_orig;
+    void* StaticMeshLODInfoCtor_hook(void* lodInfo, UStaticMeshComponent* component, INT lodIndex);
+
+    // LE3 11.3.2 Rvr material-interface virtuals. Slot 91 is GetMaterial (with an opaque
+    // selector); slot 99 allocates the FMaterialResource. These are not interchangeable.
+    using tRvrGetMaterial = UMaterial* (UMaterialInterface* self, UMaterialInterface* context, INT selector);
+    using tRvrAllocateResource = FMaterialResource* (UMaterialInterface* self);
+    extern tRvrGetMaterial* RvrEffectsMaterialUser_GetMaterial_orig;
+    extern tRvrAllocateResource* RvrEffectsMaterialUser_AllocateResource_orig;
+    extern tRvrGetMaterial* RvrMaterialMultiplexor_GetMaterial_orig;
+    extern tRvrAllocateResource* RvrMaterialMultiplexor_AllocateResource_orig;
+    UMaterial* RvrEffectsMaterialUser_GetMaterial_hook(UMaterialInterface* self, UMaterialInterface* context, INT selector);
+    FMaterialResource* RvrEffectsMaterialUser_AllocateResource_hook(UMaterialInterface* self);
+    UMaterial* RvrMaterialMultiplexor_GetMaterial_hook(UMaterialInterface* self, UMaterialInterface* context, INT selector);
+    FMaterialResource* RvrMaterialMultiplexor_AllocateResource_hook(UMaterialInterface* self);
+
+    // UMaterial::VirtFunc_102 is the transient shader-compile route: it selects the child
+    // UMaterial's ordinary FMaterialResource before FMaterial::Compile translates it. The Rvr
+    // wrapper virtuals above are deliberately not installed for this diagnostic; ShaderHost does
+    // not use them when it compiles the transient child material.
+    using tUMaterialSelectResource = UINT64(UMaterial* self, FStaticParameterSet* parameters,
+        FMaterial* candidateResource, EShaderPlatform platform, INT resourceIndexOrQuality,
+        UINT arg6, UINT arg7);
+    extern tUMaterialSelectResource* UMaterial_SelectResource_orig;
+    UINT64 UMaterial_SelectResource_hook(UMaterial* self, FStaticParameterSet* parameters,
+        FMaterial* candidateResource, EShaderPlatform platform, INT resourceIndexOrQuality,
+        UINT arg6, UINT arg7);
+
+    void FlushRvrMaterialResolutionTrace(FMaterialResource* material, const FString& materialPath);
+    void WriteRvrMaterialResolutionTraceStatus(const wchar_t* status);
+
+    // LE3 11.3.2 shared material-translator helper at RVA 0x2A0070. It applies
+    // sample * (UnpackMax - UnpackMin) + UnpackMin to the sampled code chunk.
+    // Returns the translator's expression/code index in EAX. This is not a void helper: callers
+    // immediately consume the result, so a diagnostic detour must preserve and return it.
+    using tUnpackTexture = INT(FHLSLTranslator* translator, INT sampleCodeIndex,
+        void* texture, UINT textureCompressionSettings);
+    extern tUnpackTexture* UnpackTexture_orig;
+    INT UnpackTexture_hook(FHLSLTranslator* translator, INT sampleCodeIndex,
+        void* texture, UINT textureCompressionSettings);
+
+    // LE3 11.3.2 vtable slot 87 (+0x2B8) of UMaterialExpressionTextureSampleParameterNormal.
+    // This is the narrow observation point for the normal-only compression discriminator: RCX is
+    // the expression, RDX is the HLSL translator, and EAX is the material-code index returned to
+    // FHLSLMaterialTranslator::CallExpression. Preserve the signed return, including -1.
+    using tNormalTextureSampleCompile = INT(__fastcall)(void* expression, FHLSLTranslator* translator);
+    extern tNormalTextureSampleCompile* NormalTextureSampleCompile_orig;
+    INT __fastcall NormalTextureSampleCompile_hook(void* expression, FHLSLTranslator* translator);
+    void WriteMaterialTranslationTraceStatus(const wchar_t* status);
+
 
     // Functions
 

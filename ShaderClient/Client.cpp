@@ -1,3 +1,4 @@
+﻿#include <atomic>
 #include "d3dcompiler.h"
 #include "Common/Objects.hpp"
 #include "Common/json.hpp"
@@ -148,13 +149,172 @@ namespace ShaderClient
 	/// IsTerrainMaterialResource() in Hooks.hpp for why that dereference is unsafe). Persisted terrain
 	/// resources use SaveTerrainMaterialResource's owner-terrain path instead.
 	/// </summary>
+	FStaticParameterSet const* GCurrentStaticParameters = nullptr;
+
+	int CompileIdleExitSeconds = 120;
+
+	namespace
+	{
+		// Wall-clock tick of the last compile activity, and whether any has happened at all. Both are
+		// atomic: the watchdog runs on its own thread while compiling happens on the game's.
+		std::atomic<ULONGLONG> GLastCompileActivityTick{ 0 };
+		std::atomic<bool> GAnyCompileSeen{ false };
+		std::atomic<bool> GCompileWatchdogStop{ false };
+		HANDLE GCompileWatchdogHandle = nullptr;
+
+		DWORD WINAPI CompileIdleWatchdogThread(LPVOID)
+		{
+			constexpr DWORD PollIntervalMs = 250;
+			const ULONGLONG idleLimitMs = static_cast<ULONGLONG>(CompileIdleExitSeconds) * 1000ULL;
+
+			while (!GCompileWatchdogStop.load())
+			{
+				Sleep(PollIntervalMs);
+
+				// Never exit before the first compile: level load and streaming can take a while, and
+				// leaving during it would look exactly like a successful empty capture.
+				if (!GAnyCompileSeen.load())
+				{
+					continue;
+				}
+
+				const ULONGLONG last = GLastCompileActivityTick.load();
+				if (last == 0 || GetTickCount64() - last < idleLimitMs)
+				{
+					continue;
+				}
+
+				LEASI_INFO(L"Shader compiling idle for {}s; exiting.", CompileIdleExitSeconds);
+
+				// TerminateProcess rather than a graceful shutdown: this process exists only to compile,
+				// and the engine's own teardown is what produced the 0xC0000005 exit codes the host
+				// reported as crashes. Everything the host needs has already been written to the pipe.
+				// Flush first, or the kill discards the info lines buffered since the last periodic flush.
+				LEASI_FLUSH();
+				TerminateProcess(GetCurrentProcess(), k_shaderClientIdleExitCode);
+				return 0;
+			}
+			return 0;
+		}
+	}
+
+	void NotifyCompileActivity()
+	{
+		GAnyCompileSeen.store(true);
+		GLastCompileActivityTick.store(GetTickCount64());
+	}
+
+	void StartCompileIdleWatchdog()
+	{
+		if (CompileIdleExitSeconds <= 0)
+		{
+			LEASI_INFO(L"Auto-exit watchdog disabled.");
+			return;
+		}
+		GCompileWatchdogStop.store(false);
+		GCompileWatchdogHandle = CreateThread(nullptr, 0, CompileIdleWatchdogThread, nullptr, 0, nullptr);
+		LEASI_INFO(L"Auto-exit watchdog started: will exit after {}s idle once compiling begins.", CompileIdleExitSeconds);
+	}
+
+	void StopCompileIdleWatchdog()
+	{
+		GCompileWatchdogStop.store(true);
+		if (GCompileWatchdogHandle != nullptr)
+		{
+			WaitForSingleObject(GCompileWatchdogHandle, 1000);
+			CloseHandle(GCompileWatchdogHandle);
+			GCompileWatchdogHandle = nullptr;
+		}
+	}
+
+	namespace
+	{
+		// FNV-1a 64. Deliberately hand-rolled: the host has to reproduce this byte for byte in C#,
+		// and anything from a library would make the two implementations drift.
+		constexpr QWORD k_fnvOffsetBasis = 0xcbf29ce484222325ULL;
+		constexpr QWORD k_fnvPrime = 0x100000001b3ULL;
+
+		inline void HashByte(QWORD& hash, BYTE value)
+		{
+			hash ^= value;
+			hash *= k_fnvPrime;
+		}
+
+		/// Hashes a name as its UTF-16 code units, low byte first, then a NUL separator. Not UTF-8:
+		/// this has to match C# exactly without either side depending on an encoder. SFXName's
+		/// k_formatInstanced matches LEC's NameReference.Instanced, so the two agree on the number
+		/// suffix as well.
+		void HashName(QWORD& hash, SFXName const& name)
+		{
+			FString const text = name.ToString(SFXName::k_formatInstanced);
+			auto const* chars = text.Chars();
+			for (decltype(text.Length()) i = 0; i < text.Length(); ++i)
+			{
+				HashByte(hash, static_cast<BYTE>(chars[i] & 0xFF));
+				HashByte(hash, static_cast<BYTE>((chars[i] >> 8) & 0xFF));
+			}
+			HashByte(hash, 0);
+		}
+
+		/// True when the instance actually diverges from its parent. The parameter set carries the
+		/// parent's whole parameter list, and only the entries flagged Override are the instance's
+		/// own; a set with none of them resolves to the parent's shader map, so it must stay on the
+		/// parent's path -- that is also what keeps plain UMaterial captures at their existing paths.
+		bool HasAnyOverride(FStaticParameterSet const* parameters)
+		{
+			if (parameters == nullptr) return false;
+			for (auto const& p : parameters->StaticSwitchParameters) { if (p.Override) return true; }
+			for (auto const& p : parameters->StaticComponentMaskParameters) { if (p.Override) return true; }
+			for (auto const& p : parameters->NormalParameters) { if (p.Override) return true; }
+			return false;
+		}
+	}
+
+	std::wstring StaticPermutationSuffix(FStaticParameterSet const* parameters)
+	{
+		if (!HasAnyOverride(parameters)) return {};
+
+		// BaseMaterialId and the per-parameter ExpressionGUIDs are deliberately left out: the parent
+		// material's path is already in the directory name, and FGuid's byte order across the C++/C#
+		// boundary is one more thing that could silently disagree. Names plus values identify the
+		// permutation within a parent, which is all the key has to do. Override flags are excluded
+		// too -- two instances with identical values share one shader map however they are flagged.
+		QWORD hash = k_fnvOffsetBasis;
+		for (auto const& p : parameters->StaticSwitchParameters)
+		{
+			HashByte(hash, 'S');
+			HashName(hash, p.Name);
+			HashByte(hash, p.Value ? 1 : 0);
+		}
+		for (auto const& p : parameters->StaticComponentMaskParameters)
+		{
+			HashByte(hash, 'M');
+			HashName(hash, p.Name);
+			HashByte(hash, p.R ? 1 : 0);
+			HashByte(hash, p.G ? 1 : 0);
+			HashByte(hash, p.B ? 1 : 0);
+			HashByte(hash, p.A ? 1 : 0);
+		}
+		for (auto const& p : parameters->NormalParameters)
+		{
+			HashByte(hash, 'N');
+			HashName(hash, p.Name);
+			HashByte(hash, p.CompressionSettings);
+		}
+
+		return std::format(L"#{:016x}", hash);
+	}
+
 	FString GetMaterialWireName(FMaterialResource* material) {
 		if (IsTerrainMaterialResource(material)) {
 			FString name;
 			GetFriendlyNameVirtual(material, &name);
 			return name;
 		}
-		return material->Material->GetFullPath();
+		// Instance permutations reach here with ->Material pointing at the parent UMaterial, so the
+		// suffix is what keeps them from landing on -- and overwriting -- the parent's own capture.
+		return FString(std::format(L"{}{}", material->Material->GetFullPath().Chars(),
+			StaticPermutationSuffix(GCurrentStaticParameters)).c_str());
 	}
 
 	/// <summary>
@@ -163,6 +323,28 @@ namespace ShaderClient
 	/// <param name="pipeHandle">The handle to the pipe to write to.</param>
 	/// <param name="size">The size in bytes of the data to write.</param>
 	/// <param name="data">A pointer to the data buffer to write.</param>
+	void SendShaderCompileFailure(const std::string& message) {
+		auto pipeHandle = CreateHostPipe();
+		std::string payload(1, static_cast<char>(ShaderHostCommand::ShaderCompileFailed));
+		payload += message;
+		payload.push_back('\0');
+		DWORD written = 0;
+		if (!WriteFile(pipeHandle, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) || written != payload.size()) {
+			LEASI_ERROR("Could not forward shader failure to host (Win32 error {})", GetLastError());
+		}
+	}
+
+	void SendMaterialCompileFailure(FMaterialResource* material) {
+		std::string message = "Material '" + ws2s(GetMaterialWireName(material).Chars()) + "' failed to compile";
+		if (material->CompileErrors.Count() == 0) {
+			message += ": native compiler returned failure without diagnostics.";
+		}
+		for (UINT i = 0; i < material->CompileErrors.Count(); ++i) {
+			message += "\n  " + ws2s(material->CompileErrors.GetData()[i].Chars());
+		}
+		SendShaderCompileFailure(message);
+	}
+
 	void WriteSizedData(HANDLE pipeHandle, DWORD size, const void* data) {
 		DWORD numBytesWritten = 0;
 		WriteFile(pipeHandle, &size, 4, &numBytesWritten, NULL);
