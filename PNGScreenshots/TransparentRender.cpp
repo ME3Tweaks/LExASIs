@@ -35,8 +35,7 @@ namespace PNGScreenshots::TransparentRender
 
         UMaterial* GetBlackUnlitMaterial()
         {
-            // Not exposed as a GEngine field (unlike LevelColorationUnlitMaterial below), so it has to
-            // be located by name. It's part of the always-resident Startup.pcc package.
+            // Find black material for light cycle
             static UMaterial* cached = UObject::FindObject<UMaterial>(L"Material EngineDebugMaterials.BlackUnlitMaterial");
             return cached;
         }
@@ -50,14 +49,15 @@ namespace PNGScreenshots::TransparentRender
             }
         }
 
-        // LevelColorationUnlitMaterial is unlit, but its baked-in "Color" vector parameter defaults to
-        // red, not white - so it needs a per-instance override via a fresh MaterialInstanceConstant.
+        // LevelColorationUnlitMaterial is unlit, use it for white cycle
         void ApplyWhiteMaterial(UStaticMeshComponent* component, int elementCount)
         {
             auto whiteBase = (*GEngine)->LevelColorationUnlitMaterial;
-            if (!whiteBase)
+            if (!whiteBase) {
                 return;
+            }
 
+            // Tune color to white
             FLinearColor white{ 1.f, 1.f, 1.f, 1.f };
             for (int i = 0; i < elementCount; i++)
             {
@@ -73,8 +73,9 @@ namespace PNGScreenshots::TransparentRender
         void ApplyBlackMaterial(UStaticMeshComponent* component, int elementCount)
         {
             auto black = GetBlackUnlitMaterial();
-            if (!black)
+            if (!black) {
                 return;
+            }
 
             for (int i = 0; i < elementCount; i++)
             {
@@ -87,7 +88,9 @@ namespace PNGScreenshots::TransparentRender
             for (auto& cached : gCachedComponents)
             {
                 if (!cached.Component)
+                {
                     continue;
+                }
 
                 for (int i = 0; i < static_cast<int>(cached.OriginalMaterials.size()); i++)
                 {
@@ -97,23 +100,60 @@ namespace PNGScreenshots::TransparentRender
             gCachedComponents.clear();
         }
 
+        // Screenshot takes two frames so we slow the game down as much as possible to slow the movement down to
+        // make a cleaner shot. Sadly particles and shaders do not care about this.
+        constexpr float kCaptureTimeDilation = 0.0001f;
+        std::vector<std::pair<AWorldInfo*, float>> gSavedTimeDilation;
+
+        void SlowWorldTime()
+        {
+            gSavedTimeDilation.clear();
+            for (Common::TypedObjectIterator<AWorldInfo, true, false> it; it; ++it)
+            {
+                auto info = *it;
+                if (!info) {
+                    continue;
+                }
+
+                gSavedTimeDilation.emplace_back(info, info->TimeDilation);
+                info->TimeDilation = kCaptureTimeDilation;
+            }
+        }
+
+        void RestoreWorldTime()
+        {
+            for (auto& [info, original] : gSavedTimeDilation)
+            {
+                info->TimeDilation = original;
+            }
+            gSavedTimeDilation.clear();
+        }
+
         void StartCapture()
         {
-            if (stage != CaptureStage::Idle)
-                return; // Already mid-sequence; ignore.
+            if (stage != CaptureStage::Idle) {
+                // Already mid-sequence, ignore
+                return;
+            }
 
+            // Slow down time and prepare
             gCachedComponents.clear();
             gWhiteCapture.clear();
+            SlowWorldTime();
 
             for (Common::TypedObjectIterator<UStaticMeshComponent, true, false> it; it; ++it)
             {
                 auto component = *it;
-                if (!component || !component->Owner || !component->bAttached)
+                if (!component || !component->Owner || !component->bAttached) 
+                {
                     continue;
+                }
 
                 const int elementCount = component->GetNumElements();
                 if (elementCount <= 0)
+                {
                     continue;
+                }
 
                 CachedComponentMaterials cached;
                 cached.Component = component;
@@ -127,24 +167,17 @@ namespace PNGScreenshots::TransparentRender
                 ApplyWhiteMaterial(component, elementCount);
             }
 
+            // We're at the white shot stage 
             stage = CaptureStage::AwaitingWhite;
             rendersUntilCapture = 1;
         }
 
-        // Generalized (Smith/Blinn) difference-matting: rather than assuming the two backdrops render as
-        // literal (1,1,1) white and (0,0,0) black, we calibrate against what they actually rendered as -
-        // color grading/tonemapping means a shot lit to "white" doesn't necessarily land on pure white in
-        // the framebuffer (e.g. it can come out with a slight tint). We sample the four corners of each
-        // pass (assumed to be background, not covered by the posed subject) to get the true backdrop
-        // colors C1 (white pass) and C2 (black pass) per channel, then:
-        //   alpha   = 1 - (O1 - O2) / (C1 - C2)      [how much the pixel changed vs. how much the backdrop did]
-        //   trueRGB = (O2 - (1 - alpha) * C2) / alpha [unmix the black-pass observation against its backdrop]
-        // An unchanging foreground pixel reports the same value against both backdrops (O1 == O2) and stays
-        // fully opaque with its true color; a background pixel moves with the backdrop and goes transparent.
+        // Generalized (Smith/Blinn) difference-matting is used
         void WriteComposite(int width, int height, const std::vector<unsigned char>& white, const std::vector<unsigned char>& black, const std::wstring& baseName)
         {
-            if (white.size() != black.size() || white.empty())
+            if (white.size() != black.size() || white.empty()) {
                 return;
+            }
 
             const auto sampleCorners = [&](const std::vector<unsigned char>& buf, float outRgb[3])
             {
@@ -157,8 +190,9 @@ namespace PNGScreenshots::TransparentRender
                 for (int c = 0; c < 3; c++)
                 {
                     float sum = 0.f;
-                    for (size_t corner : corners)
+                    for (size_t corner : corners) {
                         sum += buf[corner + c] / 255.f;
+                    }
                     outRgb[c] = sum / 4.f;
                 }
             };
@@ -169,8 +203,9 @@ namespace PNGScreenshots::TransparentRender
             for (int c = 0; c < 3; c++)
             {
                 backdropDiff[c] = backdropWhite[c] - backdropBlack[c];
-                if (std::fabs(backdropDiff[c]) < 0.05f)
-                    backdropDiff[c] = 1.f; // Degenerate backdrop sample; fall back to the ideal assumption.
+                if (std::fabs(backdropDiff[c]) < 0.05f) {
+                    backdropDiff[c] = 1.f; // Degenerate backdrop sample
+                }
             }
 
             std::vector<unsigned char> rgba(static_cast<size_t>(width) * height * 4);
@@ -180,8 +215,9 @@ namespace PNGScreenshots::TransparentRender
             {
                 const size_t rgbOffset = static_cast<size_t>(p) * 3;
                 const size_t rgbaOffset = static_cast<size_t>(p) * 4;
-                if (rgbOffset + 2 >= white.size())
+                if (rgbOffset + 2 >= white.size()) {
                     break;
+                }
 
                 float alphaSum = 0.f;
                 for (int c = 0; c < 3; c++)
@@ -213,8 +249,9 @@ namespace PNGScreenshots::TransparentRender
 
             std::error_code ec;
             std::filesystem::create_directories(outDir, ec);
-            if (!std::filesystem::exists(outDir))
-                return; // Cannot create output folder.
+            if (!std::filesystem::exists(outDir)) {
+                return; // Cannot create output folder
+            }
 
             std::filesystem::path outPath, whiteDebugPath, blackDebugPath;
             while (gTransparentIndex < kMaxTransparentIndex)
@@ -233,13 +270,9 @@ namespace PNGScreenshots::TransparentRender
                 }
             }
 
-            if (gTransparentIndex == kMaxTransparentIndex)
+            if (gTransparentIndex >= kMaxTransparentIndex) {
                 return; // Can't take any more.
-
-            // Diagnostic dumps of the raw (pre-reconciliation) white/black passes, so what each backdrop
-            // actually produced can be inspected directly instead of only ever seeing the composite.
-            //fpng::fpng_encode_image_to_wfile(whiteDebugPath.c_str(), white.data(), width, height, 3, 0U);
-            //fpng::fpng_encode_image_to_wfile(blackDebugPath.c_str(), black.data(), width, height, 3, 0U);
+            }
 
             fpng::fpng_encode_image_to_wfile(outPath.c_str(), rgba.data(), width, height, 4, 0U); // 4bpp (RGBA), no flags
         }
@@ -315,7 +348,9 @@ namespace PNGScreenshots::TransparentRender
         if ((stage == CaptureStage::AwaitingWhite || stage == CaptureStage::AwaitingBlack) && rendersUntilCapture >= 0)
         {
             auto funcFullName = Function->GetFullName();
-            if (funcFullName.Equals(L"Function SFXGameMPContent.SFXHUDMP.PostRender"))
+            // SFXHUDMP overrides PostRender in multiplayer
+            if (funcFullName.Equals(L"Function SFXGame.BioHUD.PostRender")
+                || funcFullName.Equals(L"Function SFXGameMPContent.SFXHUDMP.PostRender"))
             {
                 if (rendersUntilCapture > 0)
                 {
@@ -323,7 +358,7 @@ namespace PNGScreenshots::TransparentRender
                 }
                 else
                 {
-                    rendersUntilCapture = -1; // Disarm until HandleCapture rearms it for the next stage.
+                    rendersUntilCapture = -1; // Disarm until HandleCapture rearms it for the next stage
                     RunConsoleCommand(L"screenshot");
                 }
             }
@@ -332,27 +367,6 @@ namespace PNGScreenshots::TransparentRender
         UObject_ProcessEvent_orig(Context, Function, Parms, Result);
     }
 
-
-    /*void UObject_ProcessEvent_hook(UObject* Context, UFunction* Function, void* Parms, void* Result)
-    {
-        if ((stage == CaptureStage::AwaitingWhite || stage == CaptureStage::AwaitingBlack) && rendersUntilCapture >= 0)
-        {
-            if (Function->GetName() == L"PostRender" && Function->Outer != nullptr && (IsChildOf(static_cast<UClass*>(Function->Outer), ABioHUD::StaticClass()) == true))
-            {
-                if (rendersUntilCapture > 0)
-                {
-                    rendersUntilCapture--;
-                }
-                else
-                {
-                    rendersUntilCapture = -1; // Disarm until HandleCapture rearms it for the next stage.
-                    RunConsoleCommand(L"screenshot");
-                }
-            }
-        }
-
-        UObject_ProcessEvent_orig(Context, Function, Parms, Result);
-    }*/
 
     bool HandleCapture(wchar_t const* inputBaseName, int width, int height, const std::vector<unsigned char>& rgb)
     {
@@ -377,6 +391,7 @@ namespace PNGScreenshots::TransparentRender
         if (stage == CaptureStage::AwaitingBlack)
         {
             RestoreOriginalMaterials();
+            RestoreWorldTime();
             WriteComposite(width, height, gWhiteCapture, rgb, gCaptureBaseName);
             gWhiteCapture.clear();
             stage = CaptureStage::Idle;

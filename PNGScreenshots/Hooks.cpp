@@ -3,7 +3,7 @@
 #include "PNGScreenshots/Hooks.hpp"
 #include "PNGScreenshots/TransparentRender.hpp"
 #include "LESDK/Headers.hpp"
-#include "fpng/fpng.h" // Yes cpp
+#include "fpng/fpng.h"
 #include <algorithm>
 #include <cwctype>
 #include <cstring>
