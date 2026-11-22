@@ -97,6 +97,19 @@ namespace Details
         LEASI_TRACE("resolved " #variable " => {}", (void*)variable);               \
     } while (false)
 
+// Resolves a target and hooks it in a DISABLED state, publishes the trampoline into Name##_orig,
+// and only then enables the detour
+#define LEASI_INSTALL_HOOK_DEFERRED(Init, Name, Type, Address)                                     \
+    do {                                                                                        \
+        Type* const Name##_target = (Init).ResolveTyped<Type>(Address);                         \
+        CHECK_RESOLVED(Name##_target);                                                          \
+        Name##_orig = reinterpret_cast<Type*>((Init).InstallHookDeferred(#Name,                 \
+            reinterpret_cast<void*>(Name##_target),                                             \
+            reinterpret_cast<void*>(static_cast<Type*>(&Name##_hook))));                        \
+        CHECK_RESOLVED(Name##_orig);                                                            \
+        (Init).EnableHook(#Name);                                                               \
+    } while (false)
+
 #define LEASI_HOOKDEF(Name, ReturnType, ...)    \
     using t_##Name = ReturnType(__VA_ARGS__); \
     extern t_##Name* Name##_orig; \
