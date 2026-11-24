@@ -90,6 +90,9 @@ namespace DiscordIntegration
 		GWorld = ::DiscordIntegration::HookManager->ResolveTyped<UWorld*>(BUILTIN_GWORLD_RVA);
 		CHECK_RESOLVED(GWorld);
 
+		GIsRequestingExit = ::DiscordIntegration::HookManager->ResolveTyped<UBOOL>(BUILTIN_GISREQUESTINGEXIT_RVA);
+		CHECK_RESOLVED(GIsRequestingExit);
+
 		LEASI_INFO("globals initialized");
 	}
 }

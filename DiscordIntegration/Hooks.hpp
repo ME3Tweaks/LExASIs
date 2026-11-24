@@ -9,7 +9,7 @@ namespace DiscordIntegration
 {
     // If the application is about to exit
 	// ========================================
-    extern bool* GIsRequestingExit;
+    extern UBOOL* GIsRequestingExit;
 
 #if defined(SDK_TARGET_LE1)
 	extern void** GTlkTable;
@@ -17,12 +17,19 @@ namespace DiscordIntegration
 
     void InitializeHooks();
 
-	// ! BioRequestExit hook to shutdown Discord client
+	// ! FEngineLoop::Exit hook to shut down the Discord client
 	// ========================================
+#if defined(SDK_TARGET_LE1)
+	#define DISCORD_FENGINELOOP_EXIT_RVA LEASI_RVA(0x9b7980)
+#elif defined(SDK_TARGET_LE2)
+	#define DISCORD_FENGINELOOP_EXIT_RVA LEASI_RVA(0x99db30)
+#elif defined(SDK_TARGET_LE3)
+	#define DISCORD_FENGINELOOP_EXIT_RVA LEASI_RVA(0x9b8e20)
+#endif
 
-    using tBioRequestExit = void(UBOOL bForce, INT ExitCode, INT Unused);
-    extern tBioRequestExit* BioRequestExit_orig;
-    void BioRequestExit_hook(UBOOL bForce, INT ExitCode, INT Unused);
+	using tFEngineLoop_Exit = void(void* EngineLoop);
+	extern tFEngineLoop_Exit* FEngineLoop_Exit_orig;
+	void FEngineLoop_Exit_hook(void* EngineLoop);
 
     // ! UObject::ProcessEvent hook for pumping to Discord
     // ========================================

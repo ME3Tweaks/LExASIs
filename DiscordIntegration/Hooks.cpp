@@ -16,21 +16,26 @@ namespace DiscordIntegration
 		UObject_ProcessEvent_orig = (t_UObject_ProcessEvent*)Init.InstallHook("UObject::ProcessEvent", UObject_ProcessEvent_target, UObject_ProcessEvent_hook);
 		CHECK_RESOLVED(UObject_ProcessEvent_orig);
 
+		auto const FEngineLoop_Exit_target = Init.ResolveTyped<tFEngineLoop_Exit>(DISCORD_FENGINELOOP_EXIT_RVA);
+		CHECK_RESOLVED(FEngineLoop_Exit_target);
+		FEngineLoop_Exit_orig = (tFEngineLoop_Exit*)Init.InstallHook("FEngineLoop::Exit", FEngineLoop_Exit_target, FEngineLoop_Exit_hook);
+		CHECK_RESOLVED(FEngineLoop_Exit_orig);
+
 		LEASI_INFO("hooks initialized");
 	}
 
-	tBioRequestExit* BioRequestExit_orig = nullptr;
-	void BioRequestExit_hook(UBOOL bForce, INT ExitCode, INT Unused)
+	tFEngineLoop_Exit* FEngineLoop_Exit_orig = nullptr;
+	void FEngineLoop_Exit_hook(void* EngineLoop)
 	{
 		ShutdownClient();
-		BioRequestExit_orig(bForce, ExitCode, Unused);
+		FEngineLoop_Exit_orig(EngineLoop);
 	}
 
 
 	// ! Global variables
 	// ========================================
-	
-	bool* GIsRequestingExit = nullptr;
+
+	UBOOL* GIsRequestingExit = nullptr;
 	void** GTlkTable = nullptr; // Is this a double pointer?
 
 	// ! UObject::ProcessEvent hook
@@ -58,24 +63,22 @@ namespace DiscordIntegration
 			}
 		}
 
-		// Only do stuff if Discord SDK is ready
-
-		if (discordSDKReady) {
-			if (GIsRequestingExit && *GIsRequestingExit) {
-				ShutdownClient();
-			}
-			else {
+		if (GIsRequestingExit && *GIsRequestingExit) {
+			// Covers a client that is still connecting or authorizing
+			ShutdownClient();
+		}
+		else if (discordSDKReady) {
+			// Only do stuff if Discord SDK is ready
 #ifdef LEASI_GAME_LMP
-				// Lobby changes go out sooner, within Discord's limit of 5 updates per 20 seconds.
-				Lmp::Tick();
-				bool const lobbyChanged = Lmp::HasUnsentChange() && delta >= 4000;
+			// Lobby changes go out sooner, within Discord's limit of 5 updates per 20 seconds.
+			Lmp::Tick();
+			bool const lobbyChanged = Lmp::HasUnsentChange() && delta >= 4000;
 #else
-				bool const lobbyChanged = false;
+			bool const lobbyChanged = false;
 #endif
-				if (delta >= 8000 || lobbyChanged) {
-					lastUpdate = now;
-					updateStatus();
-				}
+			if (delta >= 8000 || lobbyChanged) {
+				lastUpdate = now;
+				updateStatus();
 			}
 		}
 

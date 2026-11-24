@@ -55,6 +55,9 @@ namespace DiscordIntegration
 	// token, so if Discord rejects it the only way forward is to authorize again.
 	bool connectingWithLegacyToken = false;
 
+	// Gates client starting up again
+	bool clientShutDown = false;
+
 	// Detects if Discord is running by checking the list of active processes.
 	bool IsDiscordRunning() {
 		HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -84,7 +87,7 @@ namespace DiscordIntegration
 
 
 	void setupDiscord() {
-		if (GIsRequestingExit && *GIsRequestingExit) {
+		if (clientShutDown || (GIsRequestingExit && *GIsRequestingExit)) {
 			return; // Don't set up if we're shutting down
 		}
 
@@ -160,6 +163,10 @@ namespace DiscordIntegration
 	/// Runs the OAuth2 authorization flow, then saves the tokens and connects.
 	/// </summary>
 	void beginAuthorization() {
+		if (clientShutDown || !client) {
+			return;
+		}
+
 		// Generate OAuth2 code verifier for authentication
 		auto codeVerifier = client->CreateAuthorizationCodeVerifier();
 
@@ -176,6 +183,9 @@ namespace DiscordIntegration
 		client->Authorize(args, [codeVerifier](auto result, auto code, auto redirectUri) {
 			if (!result.Successful()) {
 				LEASI_ERROR("Authentication Error: {}\n", result.Error());
+				return;
+			}
+			if (clientShutDown || !client) {
 				return;
 			}
 
@@ -205,15 +215,22 @@ namespace DiscordIntegration
 	/// <summary>
 	/// Shuts down and exits the discord client.
 	/// </summary>
+	/// Safe to call more than once
 	void ShutdownClient() {
-		LEASI_INFO("Discord client shutting down.");
+		discordSDKReady = false; // This will prevent any other stuff from happening related to Discord
+		startedDiscordInit = true; // Never set the client up again
+		if (clientShutDown) {
+			return;
+		}
+		clientShutDown = true;
+
 		if (client) {
+			LEASI_INFO("Discord client shutting down.");
 			client->Disconnect();
 			client->Drop();
 			discordpp::RunCallbacks(); // Run loop to disconnect
+			client.reset();
 		}
-
-		discordSDKReady = false; // This will prevent any other stuff from happening related to Discord
 	}
 
 	// STATUS COMPONENT ================================================================
@@ -517,6 +534,9 @@ namespace DiscordIntegration
 	/// Exchanges the refresh token for a new token pair, saves it, and connects with the new access token.
 	/// </summary>
 	void refreshAndConnect(const std::string& refreshToken) {
+		if (clientShutDown || !client) {
+			return;
+		}
 		client->RefreshToken(APPLICATION_ID, refreshToken,
 			[](discordpp::ClientResult result, std::string accessToken,
 				std::string newRefreshToken,
@@ -544,9 +564,15 @@ namespace DiscordIntegration
 	/// Hands the access token to the SDK and connects once it has been applied.
 	/// </summary>
 	void connectWithToken(const std::string& accessToken) {
+		if (clientShutDown || !client) {
+			return;
+		}
 		client->UpdateToken(discordpp::AuthorizationTokenType::Bearer, accessToken, [](discordpp::ClientResult result) {
 			if (!result.Successful()) {
 				LEASI_ERROR("Error setting Discord token: {}", result.Error());
+				return;
+			}
+			if (clientShutDown || !client) {
 				return;
 			}
 			LEASI_INFO("Connecting to Discord...");
