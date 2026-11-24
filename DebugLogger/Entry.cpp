@@ -53,6 +53,6 @@ namespace DebugLogger
 	void InitializeHooks(::LESDK::Initializer& Init)
 	{
 		InstallSharedHooks(Init);
-		InstallGameSpecificHooks(Init);
+		// InstallGameSpecificHooks(Init);
 	}
 }

@@ -18,68 +18,39 @@ namespace DebugLogger
 
 	void InstallSharedHooks(::LESDK::Initializer& Init)
 	{
-		// OutputDebugStringW is called during ASI startup. Create its hook in a
-		// disabled state so its trampoline is published before any thread can
-		// enter the detour.
-		#define INSTALL_OUTPUTDEBUGSTRINGW_DEFERRED(INIT, TARGET) \
-			do { \
-				OutputDebugStringW_orig = reinterpret_cast<tOutputDebugStringW*>((INIT).InstallHookDeferred("OutputDebugStringW", (TARGET), OutputDebugStringW_hook)); \
-				CHECK_RESOLVED(OutputDebugStringW_orig); \
-				(INIT).EnableHook("OutputDebugStringW"); \
-			} while (false)
+		// All hooks below are installed deferred to prevent startup crashes
 
 		// Debug String Output
 		// ----------------------------------------
-		auto const outputDebugStringW_target = Init.ResolveTyped<tOutputDebugStringW>(::LESDK::Address::FromAbsolute(OutputDebugStringW));
-		CHECK_RESOLVED(outputDebugStringW_target);
-		INSTALL_OUTPUTDEBUGSTRINGW_DEFERRED(Init, outputDebugStringW_target);
-		#undef INSTALL_OUTPUTDEBUGSTRINGW_DEFERRED
+		LEASI_INSTALL_HOOK_DEFERRED(Init, OutputDebugStringW, tOutputDebugStringW, ::LESDK::Address::FromAbsolute(::OutputDebugStringW));
 
 		// Import resolution failures
 		//----------------------------------------
-		auto const CreateImport_target = Init.ResolveTyped<tCreateEntry>(BUILTIN_VERIFYIMPORT_RVA);
-		CHECK_RESOLVED(CreateImport_target);
-		CreateImport_orig = (tCreateEntry*)Init.InstallHook("CreateImport", CreateImport_target, CreateImport_hook);
-		CHECK_RESOLVED(CreateImport_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, CreateImport, tCreateEntry, BUILTIN_VERIFYIMPORT_RVA);
 
-		// Export creation failures (with optional success logging for pinpointing issues)
+		// Export creation failures (with optional success logging for pinpointing context)
 		// ---------------------------------------
 		bLogExportCreation = (nullptr != std::wcsstr(GetCommandLineW(), L" -debugexportcreation"));
-		auto const CreateExport_target = Init.ResolveTyped<tCreateEntry>(BUILTIN_CREATEEXPORT_RVA);
-		CHECK_RESOLVED(CreateExport_target);
-		CreateExport_orig = (tCreateEntry*)Init.InstallHook("CreateExport", CreateExport_target, CreateExport_hook);
-		CHECK_RESOLVED(CreateExport_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, CreateExport, tCreateEntry, BUILTIN_CREATEEXPORT_RVA);
 
 		// Package loading (Blocking)
 		// ---------------------------------------
-		auto const LoadPackage_target = Init.ResolveTyped<tLoadPackage>(BUILTIN_LOADPACKAGE_RVA);
-		CHECK_RESOLVED(LoadPackage_target);
-		LoadPackage_orig = (tLoadPackage*)Init.InstallHook("LoadPackage", LoadPackage_target, LoadPackage_hook);
-		CHECK_RESOLVED(LoadPackage_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, LoadPackage, tLoadPackage, BUILTIN_LOADPACKAGE_RVA);
 
 		// Package loading (Background)
 		// ---------------------------------------
-		auto const LoadPackageAsyncTick_target = Init.ResolveTyped<tLoadPackageAsyncTick>(BUILTIN_LOADPACKAGEASYNCTICK_RVA);
-		CHECK_RESOLVED(LoadPackageAsyncTick_target);
-		LoadPackageAsyncTick_orig = (tLoadPackageAsyncTick*)Init.InstallHook("LoadPackageAsyncTick", LoadPackageAsyncTick_target, LoadPackageAsyncTick_hook);
-		CHECK_RESOLVED(LoadPackageAsyncTick_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, LoadPackageAsyncTick, tLoadPackageAsyncTick, BUILTIN_LOADPACKAGEASYNCTICK_RVA);
 
 		// StaticAllocateObject failures where exports fail to load
 		// ---------------------------------------
-		auto const StaticAllocateObject_target = Init.ResolveTyped<tStaticAllocateObject>(BUILTIN_STATICALLOCATEOBJECT_RVA);
-		CHECK_RESOLVED(StaticAllocateObject_target);
-		StaticAllocateObject_orig = (tStaticAllocateObject*)Init.InstallHook("StaticAllocateObject", StaticAllocateObject_target, StaticAllocateObject_hook);
-		CHECK_RESOLVED(StaticAllocateObject_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, StaticAllocateObject, tStaticAllocateObject, BUILTIN_STATICALLOCATEOBJECT_RVA);
 
-		// LogInternal - allows logging from UnrealScript. This is very verbose,
-		// so leave the game's logging path untouched when explicitly disabled.
+		// LogInternal - allows logging from UnrealScript. This is very verbose, so allow turning it off
+		// with -nologinternal
 		// ---------------------------------------
 		if (!std::wcsstr(GetCommandLineW(), L"-nologinternal"))
 		{
-			auto const LogInternal_target = Init.ResolveTyped<tLogInternal>(BUILTIN_OBJECT_LOGINTERNAL_RVA);
-			CHECK_RESOLVED(LogInternal_target);
-			LogInternal_orig = (tLogInternal*)Init.InstallHook("LogInternal", LogInternal_target, LogInternal_hook);
-			CHECK_RESOLVED(LogInternal_orig);
+			LEASI_INSTALL_HOOK_DEFERRED(Init, LogInternal, tLogInternal, BUILTIN_OBJECT_LOGINTERNAL_RVA);
 		}
 		else
 		{
@@ -88,36 +59,29 @@ namespace DebugLogger
 
 		// FErrorOutputDevice::Logf - for executable message logs
 		// ---------------------------------------
-		auto const FOutputDeviceLogf_target = Init.ResolveTyped<tFOutputDeviceLogf>(BUILTIN_APPLOGF_RVA);
-		CHECK_RESOLVED(FOutputDeviceLogf_target);
-		FOutputDeviceLogf_orig = (tFOutputDeviceLogf*)Init.InstallHook("FOutputDeviceLogf", FOutputDeviceLogf_target, FOutputDeviceLogf_hook);
-		CHECK_RESOLVED(FOutputDeviceLogf_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, FOutputDeviceLogf, tFOutputDeviceLogf, BUILTIN_APPLOGF_RVA);
 
 		// FErrorOutputDeviceLogf - for executable error logging
 		// ---------------------------------------
-		auto const FErrorOutputDeviceLogf_target = Init.ResolveTyped<tFOutputDeviceErrorLogf>(BUILTIN_APPERRORLOGF_RVA);
-		CHECK_RESOLVED(FErrorOutputDeviceLogf_target);
-		FErrorOutputDeviceLogf_orig = (tFOutputDeviceErrorLogf*)Init.InstallHook("FErrorOutputDeviceLogf", FErrorOutputDeviceLogf_target, FErrorOutputDeviceLogf_hook);
-		CHECK_RESOLVED(FErrorOutputDeviceLogf_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, FErrorOutputDeviceLogf, tFOutputDeviceErrorLogf, BUILTIN_APPERRORLOGF_RVA);
 
 		// FindPackageFile - for logging file lookups (and seeing when they don't have a hit)
 		// ---------------------------------------
-		if (std::wcsstr(GetCommandLineW(), L" -findpackagefile")) // !0 means its in there somewhere.
+		if (std::wcsstr(GetCommandLineW(), L" -findpackagefile"))
 		{
-			auto const FindPackageFile_target = Init.ResolveTyped<t_FindPackageFile>(BUILTIN_FINDPACKAGEFILE_RVA);
-			CHECK_RESOLVED(FindPackageFile_target);
-			FindPackageFile_orig = reinterpret_cast<t_FindPackageFile*>(Init.InstallHook("FindPackageFile", FindPackageFile_target, FindPackageFile_hook));
-			CHECK_RESOLVED(FindPackageFile_orig);
+			LEASI_INSTALL_HOOK_DEFERRED(Init, FindPackageFile, t_FindPackageFile, BUILTIN_FINDPACKAGEFILE_RVA);
 		}
 
 		// appHandleIOFailure - for tracing I/O failure code paths
 		// -----------------------------------------
-		
-		auto const iofailure_target = Init.ResolveTyped<tIOFailure>(LEASI_RVA(0x14d6f0));
-		CHECK_RESOLVED(iofailure_target);
-		IOFailure_orig = reinterpret_cast<tIOFailure*>(Init.InstallHook("IOFailure", iofailure_target, IOFailure_hook));
-		CHECK_RESOLVED(IOFailure_orig);
-
+#if defined(SDK_TARGET_LE1)
+		auto const IOFailure_rva = LEASI_RVA(0x1886d0);
+#elif defined(SDK_TARGET_LE2)
+		auto const IOFailure_rva = LEASI_RVA(0x1320c0);
+#elif defined(SDK_TARGET_LE3)
+		auto const IOFailure_rva = LEASI_RVA(0x14d6f0);
+#endif
+		LEASI_INSTALL_HOOK_DEFERRED(Init, IOFailure, tIOFailure, IOFailure_rva);
 
 		/*auto const ULinkLoaderLoadSerializeName_target = Init.ResolveTyped<tFOutputDeviceErrorLogf>(LEASI_RVA(0xfa580));
 		CHECK_RESOLVED(ULinkLoaderLoadSerializeName_target);
@@ -134,8 +98,9 @@ namespace DebugLogger
 	{
 		static thread_local bool inOutputDebugStringWHook = false;
 		auto const original = OutputDebugStringW_orig;
-		if (original == nullptr)
+		if (original == nullptr) {
 			return;
+		}
 		auto const safeString = lpcszString != nullptr ? lpcszString : L"";
 
 		if (inOutputDebugStringWHook)
@@ -217,7 +182,7 @@ namespace DebugLogger
 				|| filenameStr.find(L"\\Startup_CON_Pack02") != std::wstring::npos
 				) {
 				if (!bLoggedFirstBaseFailure) {
-					LEASI_INFO("Note: Import resolution failures in LE2's shipping startup files are suppressed for performance.");
+					LEASI_INFO("Note: Import resolution failures in shipped startup files are suppressed for performance.");
 					bLoggedFirstBaseFailure = true;
 				}
 				// do not log these.

@@ -1,3 +1,5 @@
+// Only used in active development
+#if defined(DONT_COMPILE)
 #if defined(SDK_TARGET_LE3)
 #include "Common/Base.hpp"
 #include "DebugLogger/Hooks.hpp"
@@ -136,10 +138,7 @@ namespace DebugLogger {
 		// appThrowf
 		// Logs the formatted exception message before the game throws it.
 		// ----------------------------------------
-		auto const appThrowF_target = Init.ResolveTyped<tAppThrowF>(LEASI_RVA(0x11fcb0));
-		CHECK_RESOLVED(appThrowF_target);
-		AppThrowF_orig = (tAppThrowF*)Init.InstallHook("AppThrowF", appThrowF_target, AppThrowF_hook);
-		CHECK_RESOLVED(AppThrowF_orig);
+		LEASI_INSTALL_HOOK_DEFERRED(Init, AppThrowF, tAppThrowF, LEASI_RVA(0x11fcb0));
 
 		// FMaterial::InitShaderMap
 		// Detects materials that silently fall back to GEngine->DefaultMaterial (the purple/white
@@ -148,11 +147,8 @@ namespace DebugLogger {
 		// first instruction, so like ShaderClient we hook it via a post-prologue byte pattern
 		// instead of a plain RVA.
 		// ----------------------------------------
-		auto const initShaderMap_target = Init.ResolveTyped<tInitShaderMap>(::LESDK::Address::FromPostHook(
+		LEASI_INSTALL_HOOK_DEFERRED(Init, InitShaderMap, tInitShaderMap, ::LESDK::Address::FromPostHook(
 			"54 41 55 41 56 41 57 48 81 ec a0 00 00 00 48 c7 44 24 40 fe ff ff ff 49 89 5b 10 49 89 6b 18 49 89 73 20 45 8b e1 45 8b f0 48 8b ea"));
-		CHECK_RESOLVED(initShaderMap_target);
-		InitShaderMap_orig = (tInitShaderMap*)Init.InstallHook("InitShaderMap", initShaderMap_target, InitShaderMap_hook);
-		CHECK_RESOLVED(InitShaderMap_orig);
 
 		// FMaterial::GetFriendlyName - just resolved directly, not hooked, so we can name the
 		// material in the InitShaderMap log above.
@@ -165,23 +161,9 @@ namespace DebugLogger {
 		// same LE3 executable layout/SDK target.
 		if (std::wcsstr(GetCommandLineW(), L"-wwiseevent"))
 		{
-			auto const postEventById_target = Init.ResolveTyped<tPostWwiseEventById>(LEASI_RVA(AK_SoundEngine_PostEventById_RVA));
-			CHECK_RESOLVED(postEventById_target);
-			PostWwiseEventById_orig = reinterpret_cast<tPostWwiseEventById*>(Init.InstallHook(
-				"AK_SoundEngine_PostEventById", postEventById_target, PostWwiseEventById_hook));
-			CHECK_RESOLVED(PostWwiseEventById_orig);
-
-			auto const postEventByAnsiName_target = Init.ResolveTyped<tPostWwiseEventByAnsiName>(LEASI_RVA(AK_SoundEngine_PostEventByAnsiName_RVA));
-			CHECK_RESOLVED(postEventByAnsiName_target);
-			PostWwiseEventByAnsiName_orig = reinterpret_cast<tPostWwiseEventByAnsiName*>(Init.InstallHook(
-				"AK_SoundEngine_PostEventByAnsiName", postEventByAnsiName_target, PostWwiseEventByAnsiName_hook));
-			CHECK_RESOLVED(PostWwiseEventByAnsiName_orig);
-
-			auto const postEventByWideName_target = Init.ResolveTyped<tPostWwiseEventByWideName>(LEASI_RVA(AK_SoundEngine_PostEventByWideName_RVA));
-			CHECK_RESOLVED(postEventByWideName_target);
-			PostWwiseEventByWideName_orig = reinterpret_cast<tPostWwiseEventByWideName*>(Init.InstallHook(
-				"AK_SoundEngine_PostEventByWideName", postEventByWideName_target, PostWwiseEventByWideName_hook));
-			CHECK_RESOLVED(PostWwiseEventByWideName_orig);
+			LEASI_INSTALL_HOOK_DEFERRED(Init, PostWwiseEventById, tPostWwiseEventById, LEASI_RVA(AK_SoundEngine_PostEventById_RVA));
+			LEASI_INSTALL_HOOK_DEFERRED(Init, PostWwiseEventByAnsiName, tPostWwiseEventByAnsiName, LEASI_RVA(AK_SoundEngine_PostEventByAnsiName_RVA));
+			LEASI_INSTALL_HOOK_DEFERRED(Init, PostWwiseEventByWideName, tPostWwiseEventByWideName, LEASI_RVA(AK_SoundEngine_PostEventByWideName_RVA));
 
 			LEASI_INFO("Wwise event logging enabled (-wwiseevent): numeric and string AK::SoundEngine::PostEvent hooks installed");
 		}
@@ -237,4 +219,5 @@ namespace DebugLogger {
 	}
 }
 
+#endif
 #endif

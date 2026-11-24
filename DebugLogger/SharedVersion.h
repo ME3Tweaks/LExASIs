@@ -34,7 +34,11 @@
 #define ASI_GAME_ID_RC 5
 #endif
 
-#if defined(SDK_TARGET_LE3)
+#ifdef LEASI_GAME_LMP
+#define GAME_PREFIX_RC    "LMP"
+#define ASI_GROUP_ID_RC 1204
+#define ASI_GAME_ID_RC 8
+#elif defined(SDK_TARGET_LE3)
 #define GAME_PREFIX_RC    "LE3"
 #define ASI_GROUP_ID_RC 72
 #define ASI_GAME_ID_RC 6
