@@ -15,13 +15,11 @@ namespace DiscordIntegration::Lmp
 {
 	namespace
 	{
-		// Join secrets are "lmp1;<invite code>;<matchmaker url>". Matchmaker codes never contain ';'
-		// (a lobby whose code does gets no secret), so the URL is everything after the second one.
+		// Join secret: "lmp1;<invite code>;<matchmaker url>".
 		constexpr char k_secretPrefix[] = "lmp1;";
-		constexpr std::size_t k_discordFieldMax = 128;  // Party IDs and secrets: 2-128 characters.
+		constexpr std::size_t k_discordFieldMax = 128;  // Discord's limit.
 
-		// Discord runs this to start LMP for a join; Mod Manager boots the game and the join
-		// callback then delivers the secret.
+		// Discord runs this (via Mod Manager) to start LMP for a join.
 		constexpr wchar_t k_launchLink[] = L"me3tweaksmodmanager://lmplaunch";
 		constexpr wchar_t k_launchHandlerKey[] = L"me3tweaksmodmanager\\shell\\open\\command";
 
@@ -37,22 +35,18 @@ namespace DiscordIntegration::Lmp
 		std::uint64_t g_seenGeneration = 0;
 		LmpLobbyState g_state{};
 		bool g_unsent = false;
-		std::string g_lastJoinReport{};   // What was last logged about offering a Discord join.
+		std::string g_lastJoinReport{};
 
-		// A join that arrived before MilanHost's service was found.
+		// Join received before the service was found.
 		std::string g_pendingSecret{};
 
-		// Set when LMP.Lobby turned out to come from an ASI other than MilanHost; the lookup then stops.
-		bool g_providerRejected = false;
+		bool g_providerRejected = false;  // LMP.Lobby came from an ASI other than MilanHost.
 
-		// Only MilanHost owns the lobby. The proxy hands the name to whichever ASI registers it first,
-		// so another ASI could take it before MilanHost attaches.
 		constexpr wchar_t k_lobbyProviderName[] = L"MilanHost";
 
 		std::string ToUtf8(std::wstring const& text);
 
-		// The SPI name the ASI containing the table declares, and that ASI's file name, for the log.
-		// Empty name when the table is not inside an SPI ASI.
+		// SPI name and file name of the ASI containing the table
 		void DescribeProvider(const void* table, std::wstring& outName, std::wstring& outFile)
 		{
 			using SpiSupportDeclFn = void(wchar_t** name, wchar_t** author, wchar_t** version, int* gameFlags, int* minVersion);
@@ -85,28 +79,32 @@ namespace DiscordIntegration::Lmp
 				outName = name;
 		}
 
-		// MilanHost registers the service during its own attach, which can come after ours, so
-		// this keeps looking (once a second) until it appears.
 		bool ResolveService()
 		{
-			if (g_service != nullptr)
+			// Retries once a second, as MilanHost may attach after us
+			if (g_service != nullptr) {
 				return true;
+			}
 			if (g_providerRejected)
+			{
 				return false;
-
+			}
 			auto const now = std::chrono::steady_clock::now();
-			if (now < g_nextLookup)
+			if (now < g_nextLookup) {
 				return false;
+			}
 			g_nextLookup = now + k_lookupInterval;
 
 			ISharedProxyInterface* const proxy = HookManager != nullptr ? HookManager->ProxyInstance : nullptr;
 			unsigned long proxyVersion = 0;
 			if (proxy == nullptr || proxy->GetVersion(&proxyVersion) != SPIReturn::Success || proxyVersion < SPI_VERSION_V4)
+			{
 				return false;
+			}
 
 			const void* table = nullptr;
 			std::uint32_t version = 0;
-			// Only version 1 functions are used, so older MilanHost builds still work.
+			// v1 only, so older MilanHost builds work.
 			SPIReturn const rc = proxy->QueryService(LMP_LOBBY_SERVICE_NAME, 1, &table, &version);
 			if (rc == SPIReturn::Success)
 			{
@@ -115,12 +113,11 @@ namespace DiscordIntegration::Lmp
 				DescribeProvider(table, providerName, providerFile);
 				if (providerName != k_lobbyProviderName)
 				{
-					// Its state and joins would not be MilanHost's, so Discord joins stay off.
 					g_providerRejected = true;
-					LEASI_ERROR("{} is provided by {} ('{}'), not MilanHost; Discord joins are disabled",
-						LMP_LOBBY_SERVICE_NAME, ToUtf8(providerFile), ToUtf8(providerName));
-					if (!g_pendingSecret.empty())
+					LEASI_ERROR("{} is provided by {} ('{}'), Discord joins are disabled", LMP_LOBBY_SERVICE_NAME, ToUtf8(providerFile), ToUtf8(providerName));
+					if (!g_pendingSecret.empty()) {
 						LEASI_ERROR("dropping the Discord join that was waiting for MilanHost");
+					}
 					g_pendingSecret.clear();
 					return false;
 				}
@@ -130,7 +127,7 @@ namespace DiscordIntegration::Lmp
 				return true;
 			}
 
-			// Not found yet is expected while MilanHost attaches; anything else will not fix itself.
+			// NotFound is expected until MilanHost attaches
 			if (rc != SPIReturn::FailureNotFound && !g_lookupFailureLogged)
 			{
 				g_lookupFailureLogged = true;
@@ -143,10 +140,14 @@ namespace DiscordIntegration::Lmp
 		{
 			constexpr std::size_t codeStart = sizeof(k_secretPrefix) - 1;
 			if (secret.rfind(k_secretPrefix, 0) != 0)
+			{
 				return false;
+			}
 			std::size_t const split = secret.find(';', codeStart);
 			if (split == std::string::npos || split == codeStart)
+			{
 				return false;
+			}
 			outCode = secret.substr(codeStart, split - codeStart);
 			outUrl = secret.substr(split + 1);
 			return true;
@@ -162,18 +163,23 @@ namespace DiscordIntegration::Lmp
 				return;
 			}
 
-			// An empty URL keeps the current matchmaker.
+			// Empty URL keeps the current matchmaker
 			std::uint32_t const rc = g_service->RequestJoin(url.c_str(), code.c_str());
 			if (rc == LMP_LOBBY_OK)
+			{
 				LEASI_INFO("Discord join: invite code {} queued with MilanHost", code);
+			}
 			else
+			{
 				LEASI_ERROR("Discord join: MilanHost refused invite code {} (error {})", code, rc);
+			}
 		}
 
 		std::string BuildJoinSecret(LmpLobbyState const& state)
 		{
-			if (std::strchr(state.InviteCode, ';') != nullptr)
+			if (std::strchr(state.InviteCode, ';') != nullptr) {
 				return {};
+			}
 			std::string secret = std::string{ k_secretPrefix } + state.InviteCode + ";" + state.MatchmakerUrl;
 			if (secret.size() > k_discordFieldMax)
 			{
@@ -191,8 +197,9 @@ namespace DiscordIntegration::Lmp
 		{
 			int const size = ::WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
 			std::string result(static_cast<std::size_t>(size > 0 ? size : 0), '\0');
-			if (size > 0)
+			if (size > 0) {
 				::WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), result.data(), size, nullptr, nullptr);
+			}
 			return result;
 		}
 	}
@@ -240,15 +247,15 @@ namespace DiscordIntegration::Lmp
 		bool const connected = (state.Flags & LMP_LOBBY_FLAG_CONNECTED) != 0;
 		bool const hosting = (state.Flags & LMP_LOBBY_FLAG_HOSTING) != 0;
 
-		// Logs only when the answer changes, so the log shows why Discord does or does not offer a join.
+		// Logs only on change.
 		auto const reportJoin = [](std::string report)
-		{
-			if (report != g_lastJoinReport)
 			{
-				LEASI_INFO("Discord join: {}", report);
-				g_lastJoinReport = std::move(report);
-			}
-		};
+				if (report != g_lastJoinReport)
+				{
+					LEASI_INFO("Discord join: {}", report);
+					g_lastJoinReport = std::move(report);
+				}
+			};
 
 		if (!connected)
 		{
@@ -263,7 +270,6 @@ namespace DiscordIntegration::Lmp
 			activity.SetDetails("In a game");
 		activity.SetState(hosting ? "Hosting" : "Joined");
 
-		// Members of the same matchmaker lobby share the party; a game without one is shown alone.
 		if (state.LobbyId[0] == '\0' || state.PlayerCount < 1)
 		{
 			reportJoin("not offered (the lobby is not registered with the matchmaker)");
@@ -275,7 +281,7 @@ namespace DiscordIntegration::Lmp
 		party.SetCurrentSize(state.PlayerCount);
 		party.SetMaxSize(state.MaxPlayers > 0 ? state.MaxPlayers : 0);
 
-		// Only the host knows whether the lobby takes players, so only it hands out the secret.
+		// Only the host offers a secret.
 		std::string const secret = (state.Flags & LMP_LOBBY_FLAG_JOINABLE) != 0 && state.InviteCode[0] != '\0'
 			? BuildJoinSecret(state) : std::string{};
 		bool const isPublic = !secret.empty() && (state.Flags & LMP_LOBBY_FLAG_PRIVATE) == 0;
@@ -283,9 +289,9 @@ namespace DiscordIntegration::Lmp
 		activity.SetParty(party);
 
 		if (!hosting)
-			reportJoin("not offered (only the host offers joins)");
+			reportJoin("not offered (only the host can offer joins)");
 		else if ((state.Flags & LMP_LOBBY_FLAG_JOINABLE) == 0)
-			reportJoin("not offered (MilanHost reports the lobby as not joinable)");
+			reportJoin("not offered (MilanHost reports the lobby is not joinable)");
 		else if (secret.empty())
 			reportJoin("not offered (no usable join secret)");
 		else
@@ -308,13 +314,12 @@ namespace DiscordIntegration::Lmp
 		else if (g_service != nullptr)
 			SubmitJoin(secret);
 		else
-			g_pendingSecret = secret; // Tick submits it once MilanHost's service is found.
+			g_pendingSecret = secret; // Submitted by Tick
 	}
 
 	void RegisterLaunchCommand(discordpp::Client& client, uint64_t applicationId)
 	{
-		// Mod Manager registers "<exe>" --m3link "%1" for its links. HKEY_CLASSES_ROOT merges the
-		// per-user registration it makes with any machine-wide one.
+		// Mod Manager's handler is "<exe>" --m3link "%1"
 		wchar_t handler[1024]{};
 		DWORD size = sizeof(handler);
 		LSTATUS const status = ::RegGetValueW(HKEY_CLASSES_ROOT, k_launchHandlerKey, nullptr, RRF_RT_REG_SZ, nullptr, handler, &size);

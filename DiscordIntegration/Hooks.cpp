@@ -7,7 +7,7 @@ namespace DiscordIntegration
 {
 	void InitializeHooks()
 	{
-		// UObject::ProcessEvent hook for UnrealScript Activated() logging
+		// UObject::ProcessEvent hook for knowing when game loop comes up
 		// ----------------------------------------
 		
 		auto Init = *::DiscordIntegration::HookManager;

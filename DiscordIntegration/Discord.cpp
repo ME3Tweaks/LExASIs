@@ -24,8 +24,7 @@
 
 namespace DiscordIntegration
 {
-	// Discord Application ID. LMP has its own application, and so its own saved token: a token
-	// is only valid for the application that was authorized.
+	// Discord Application ID. LMP has its own application ID
 #ifdef LEASI_GAME_LMP
 	const uint64_t APPLICATION_ID = 1438008086085501019;
 	const wchar_t* const CREDENTIAL_TARGET = L"MassEffectLMPDiscordIntegration";
@@ -51,14 +50,13 @@ namespace DiscordIntegration
 	bool useLocalClient = false;
 	std::string currentState = "Unknown map";
 
-	// Set while connecting with a bare access token saved by an older build. It has no refresh
-	// token, so if Discord rejects it the only way forward is to authorize again.
+	// Set while connecting with a bare access token saved by an older build
 	bool connectingWithLegacyToken = false;
 
 	// Gates client starting up again
 	bool clientShutDown = false;
 
-	// Detects if Discord is running by checking the list of active processes.
+	// Detects if Discord is running by checking the list of active processes
 	bool IsDiscordRunning() {
 		HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 		if (hSnapshot == INVALID_HANDLE_VALUE) {
@@ -102,7 +100,7 @@ namespace DiscordIntegration
 			}, discordpp::LoggingSeverity::Info);
 
 #ifdef LEASI_GAME_LMP
-		// Joins accepted in the Discord app, whether LMP was already running or Discord started it.
+		// Accept joins via Discord
 		client->SetActivityJoinCallback([](std::string joinSecret) {
 			Lmp::OnJoinSecret(joinSecret);
 			});
@@ -117,15 +115,14 @@ namespace DiscordIntegration
 				LEASI_INFO("Status changed: {}\n", discordpp::Client::StatusToString(status));
 
 				if (status == discordpp::Client::Status::Ready) {
-					LEASI_INFO("Client is ready! You can now call SDK functions.\n");
+					LEASI_INFO("Client is now ready\n");
 					connectingWithLegacyToken = false;
 					discordSDKReady = true;
 				}
 				else if (error != discordpp::Client::Error::None) {
 					LEASI_ERROR(" Connection Error : {} - Details : {}\n", discordpp::Client::ErrorToString(error), errorDetail);
 
-					// The SDK reports a rejected token as UnexpectedClose. Network failures use the
-					// other errors and shouldn't send the user to the login page.
+					// The SDK reports a rejected token as UnexpectedClose
 					if (connectingWithLegacyToken && status == discordpp::Client::Status::Disconnected
 						&& error == discordpp::Client::Error::UnexpectedClose) {
 						LEASI_INFO("Saved Discord token was rejected, authorization is required.\n");
@@ -133,18 +130,18 @@ namespace DiscordIntegration
 						beginAuthorization();
 					}
 				}
-				});
+			});
 
-			// A saved refresh token avoids prompting the user again. Refreshing also rotates the
-			// pair, so the new access token is the only one handed to the SDK.
+			// A saved refresh token avoids prompting the user again
 			StoredTokens stored;
 			if (getStoredTokens(stored)) {
 				if (!stored.refreshToken.empty()) {
 					LEASI_INFO("Refreshing saved Discord token...\n");
 					refreshAndConnect(stored.refreshToken);
 				}
-				else {
-					// Saved by an older build: try it as-is, and authorize if Discord rejects it.
+				else
+				{
+					// Try older token...
 					LEASI_INFO("Connecting with saved Discord token from an older version...\n");
 					connectingWithLegacyToken = true;
 					connectWithToken(stored.accessToken);
@@ -160,7 +157,7 @@ namespace DiscordIntegration
 	}
 
 	/// <summary>
-	/// Runs the OAuth2 authorization flow, then saves the tokens and connects.
+	/// Runs the OAuth2 authorization flow, then saves the tokens and connects
 	/// </summary>
 	void beginAuthorization() {
 		if (clientShutDown || !client) {
@@ -413,8 +410,9 @@ namespace DiscordIntegration
 		discordpp::Activity activity;
 		discordpp::ActivityAssets assets;
 #ifdef LEASI_GAME_LMP
-		// The name defaults to the LMP application's; the image is an asset uploaded to it.
+		// The name defaults to the LMP application's
 		assets.SetLargeImage("lmp");
+		activity.SetName("Legendary Edition Multiplayer");
 #elif defined SDK_TARGET_LE1
 		assets.SetLargeImage("le1");
 		activity.SetName("Mass Effect");
@@ -442,19 +440,21 @@ namespace DiscordIntegration
 			else {
 				LEASI_ERROR("Rich Presence update failed");
 			}
-			});
+		});
 	}
 
 
 #pragma region Credential Storage
 	// Credential blob layout: "<header>\n<accessToken>\n<refreshToken>\n<expiresAt>". Older builds
-	// stored a bare null-terminated access token, which is returned with no refresh token.
+	// stored a bare null-terminated access token, which is returned with no refresh token
 	constexpr std::string_view CREDENTIAL_BLOB_HEADER = "LEASI-DISCORD-2";
 
 	/// <summary>
 	/// Reads the saved OAuth tokens from Credential Manager.
 	/// </summary>
-	/// <returns>True if a token was found. refreshToken is empty for a token saved by an older build.</returns>
+	/// <returns>
+	/// True if a token was found. refreshToken is empty for a token saved by an older build
+	/// </returns>
 	bool getStoredTokens(StoredTokens& out) {
 		PCREDENTIALW pcred = nullptr;
 		if (!::CredReadW(CREDENTIAL_TARGET, CRED_TYPE_GENERIC, 0, &pcred)) {
@@ -474,14 +474,14 @@ namespace DiscordIntegration
 
 		out = {};
 
-		// Older builds: a bare access token, written with its null terminator.
+		// Older builds - bare access token, written with null terminator
 		if (blob.find('\n') == std::string::npos) {
 			const size_t end = blob.find('\0');
 			out.accessToken = blob.substr(0, end);
 			return !out.accessToken.empty();
 		}
 
-		// Split into exactly four newline-separated fields.
+		// Split into exactly four newline-separated fields
 		std::string_view fields[4];
 		std::string_view rest = blob;
 		for (size_t i = 0; i < 4; i++) {
@@ -506,9 +506,11 @@ namespace DiscordIntegration
 	}
 
 	/// <summary>
-	/// Saves the OAuth tokens in the Windows Credential Manager under CREDENTIAL_TARGET.
+	/// Saves the OAuth tokens in the Windows Credential Manager under CREDENTIAL_TARGET
 	/// </summary>
-	/// <param name="expiresIn">Seconds until the access token expires, as returned by the token exchange.</param>
+	/// <param name="expiresIn">
+	/// Seconds until the access token expires, as returned by the token exchange.
+	/// </param>
 	void storeTokens(const std::string& accessToken, const std::string& refreshToken, int32_t expiresIn) {
 		const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
 			std::chrono::system_clock::now().time_since_epoch()).count();
@@ -531,7 +533,7 @@ namespace DiscordIntegration
 	}
 
 	/// <summary>
-	/// Exchanges the refresh token for a new token pair, saves it, and connects with the new access token.
+	/// Exchanges the refresh token for a new token pair, saves it, and connects with the new access token
 	/// </summary>
 	void refreshAndConnect(const std::string& refreshToken) {
 		if (clientShutDown || !client) {
@@ -546,14 +548,13 @@ namespace DiscordIntegration
 					if (!result.Successful()) {
 						LEASI_ERROR("Error refreshing Discord token: {}", result.Error());
 						// A rejected refresh token (revoked, or already used) needs a new authorization.
-						// Network failures don't, so don't prompt the user for those.
+						// Network failures don't, so don't prompt the user for those
 						if (result.Type() == discordpp::ErrorType::HTTPError && !result.Retryable()) {
 							beginAuthorization();
 						}
 						return;
 					}
 
-					// The old pair is invalidated by the refresh, so save the new one before connecting.
 					storeTokens(accessToken, newRefreshToken, expiresIn);
 					connectWithToken(accessToken);
 			}
@@ -561,7 +562,7 @@ namespace DiscordIntegration
 	}
 
 	/// <summary>
-	/// Hands the access token to the SDK and connects once it has been applied.
+	/// Hands the access token to the SDK and connects once it has been applied
 	/// </summary>
 	void connectWithToken(const std::string& accessToken) {
 		if (clientShutDown || !client) {
@@ -577,7 +578,7 @@ namespace DiscordIntegration
 			}
 			LEASI_INFO("Connecting to Discord...");
 			client->Connect();
-			});
+		});
 	}
 #pragma endregion
 }

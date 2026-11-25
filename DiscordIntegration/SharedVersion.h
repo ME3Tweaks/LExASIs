@@ -14,16 +14,11 @@
 #define ASI_NAME_NO_SPACE_W L"DiscordIntegration"
 
 
-#define ASI_VERSION 2
-// String that appears in the file description and part of SPI
+#define ASI_VERSION 3
 #define ASI_DESCRIPTION "Discord Integration allows the game to interface with Discord to provide rich presence information on your profile about the game."
 
-
-
-
 // === Identification from automated ME3Tweaks tooling ====
-// LEASI_GAME_LMP is checked first: LMP builds against the LE3 SDK (SDK_TARGET_LE3
-// is also defined in that case), but needs its own identity here.
+// Order matters when the ASI has an LMP specific build
 #if defined(LEASI_GAME_LMP)
 #define GAME_PREFIX_RC    "LMP"
 #define ASI_GROUP_ID_RC 1207
